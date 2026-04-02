@@ -4,9 +4,13 @@
 
 > мини-игры прямо в интерфейсе SillyTavern — играй пока ИИ думает!
 
+<div align="center">
+   
 [![Author](https://img.shields.io/badge/Telegram-smokshipub-2AABEE?style=flat-square&logo=telegram)](https://t.me/smokshipub)
 [![Author](https://img.shields.io/badge/Telegram-MommyCat_SillyTavern-2AABEE?style=flat-square&logo=telegram)](https://t.me/MommyCat_SillyTavern)
 [![Author](https://img.shields.io/badge/Telegram-sorathem-2AABEE?style=flat-square&logo=telegram)](https://t.me/sorathem)
+
+</div>   
 ---
 
 ## ✨ Что это такое
