@@ -885,7 +885,7 @@ $('g2048-again').addEventListener('touchend', e=>{e.preventDefault(); e.stopProp
 /* ═══════════════════════════════════════
    МЕМОРИ — КОНФИГ
 ═══════════════════════════════════════ */
-const MEM_EXT_PATH = 'scripts/extensions/third-party/tet';
+const MEM_EXT_PATH = 'scripts/extensions/third-party/GameCollection-main';
 
 const MEM_CARDS_ALL = [
     'death','emperor','empress','justice','sun',
