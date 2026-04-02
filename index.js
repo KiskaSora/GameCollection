@@ -885,7 +885,15 @@ $('g2048-again').addEventListener('touchend', e=>{e.preventDefault(); e.stopProp
 /* ═══════════════════════════════════════
    МЕМОРИ — КОНФИГ
 ═══════════════════════════════════════ */
-const MEM_EXT_PATH = 'scripts/extensions/third-party/GameCollection-main';
+const MEM_EXT_PATH = (() => {
+    const scripts = document.querySelectorAll('script[src]');
+    for (const s of scripts) {
+        if (s.src.includes('GameCollection')) {
+            return s.src.replace(/\/index\.js.*$/, '').replace(location.origin + '/', '');
+        }
+    }
+    return 'scripts/extensions/third-party/GameCollection-main'; // fallback
+})();
 
 const MEM_CARDS_ALL = [
     'death','emperor','empress','justice','sun',
