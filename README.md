@@ -4,6 +4,10 @@
 
 > мини-игры прямо в интерфейсе SillyTavern — играй пока ИИ думает!
 
+[![Author](https://t.me/smokshipub)](.)
+[![Author](https://t.me/MommyCat_SillyTavern)](.)
+[![Author](https://t.me/sorathem)](.)
+
 ---
 
 ## ✨ Что это такое
