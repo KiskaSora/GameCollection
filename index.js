@@ -426,9 +426,10 @@ mjPanel.innerHTML = `
      <span class="ms-hint" id="mj-moves" style="font-weight:bold;">Ходов: 0</span>
   </div>
   <div class="ms-difficulty" style="margin-top:4px;">
-    <button class="ms-diff-btn mj-diff" data-d="easy">Easy</button>
-    <button class="ms-diff-btn mj-diff" data-d="medium">Med</button>
-    <button class="ms-diff-btn mj-diff" data-d="hard">Hard</button>
+    <button class="ms-diff-btn mj-diff" data-d="easy">🔺 Малый</button>
+    <button class="ms-diff-btn mj-diff" data-d="medium">💎 Ромб</button>
+    <button class="ms-diff-btn mj-diff" data-d="cross">✚ Крест</button>
+    <button class="ms-diff-btn mj-diff" data-d="hard">🀄 Класс</button>
     <button class="ms-diff-btn mj-shuffle" id="mj-shuffle-btn" title="Перемешать оставшиеся плашки">🔀</button>
   </div>
 </div>`;
@@ -535,16 +536,36 @@ document.addEventListener('click', () => {
    МАДЖОНГ — ЛОГИКА
 ═══════════════════════════════════════ */
 const MJ_TILES_ALL = [
-    '🀙','🀚','🀛','🀜','🀝','🀞','🀟','🀠','🀡', // Dots
-    '🀐','🀑','🀒','🀓','🀔','🀕','🀖','🀗','🀘', // Bamboo
-    '🀇','🀈','🀉','🀊','🀋','🀌','🀍','🀎','🀏', // Characters
-    '🀀','🀁','🀂','🀃', // Winds
-    '🀄','🀅','🀆' // Dragons
+    'dot1','dot2','dot3','dot4','dot5','dot6','dot7','dot8','dot9', // Dots
+    'bam1','bam2','bam3','bam4','bam5','bam6','bam7','bam8','bam9', // Bamboo
+    'chr1','chr2','chr3','chr4','chr5','chr6','chr7','chr8','chr9', // Characters
+    'wnd1','wnd2','wnd3','wnd4', // Winds
+    'drg_r','drg_g','drg_w' // Dragons
 ];
 const MJ_SPECIALS = [
-    ['🀢','🀣','🀤','🀥'], // Flowers
-    ['🀦','🀧','🀨','🀩']  // Seasons
+    ['flw1','flw2','flw3','flw4'], // Flowers
+    ['sea1','sea2','sea3','sea4']  // Seasons
 ];
+
+const MJ_EXT_PATH = (() => {
+    const scripts = document.querySelectorAll('script[src]');
+    for (const s of scripts) if (s.src.includes('GameCollection')) return s.src.replace(/\/index\.js.*$/, '');
+    return 'scripts/extensions/third-party/GameCollection-main';
+})();
+
+function mjTileImg(id) {
+    const b = MJ_EXT_PATH;
+    if (id.startsWith('dot')) return `${b}/tiles/dots/${id[3]}.png`;
+    if (id.startsWith('bam')) return `${b}/tiles/bamboo/${id[3]}.jpg`;
+    if (id.startsWith('chr')) return `${b}/tiles/chars/${id[3]}.png`;
+    if (id.startsWith('wnd')) return `${b}/tiles/winds/${id[3]}.png`;
+    if (id === 'drg_r') return `${b}/tiles/dragons/red.png`;
+    if (id === 'drg_g') return `${b}/tiles/dragons/green.png`;
+    if (id === 'drg_w') return `${b}/tiles/dragons/white.png`;
+    if (id.startsWith('flw')) return `${b}/tiles/flowers/${id[3]}.png`;
+    if (id.startsWith('sea')) return `${b}/tiles/seasons/${id[3]}.png`;
+    return '';
+}
 
 let mjDiff = localStorage.getItem('mj_diff') || 'easy';
 let mjTiles = [];
@@ -555,16 +576,46 @@ let mjTimerInt = null;
 let mjSecs = 0;
 let mjGameOver = false;
 
-function mjGetDeck(count) {
-    let deck = [];
-    if (count === 144) {
-        for(let i=0; i<4; i++) deck.push(...MJ_TILES_ALL);
-        deck.push(...MJ_SPECIALS[0], ...MJ_SPECIALS[1]);
-    } else {
-        let available = [...MJ_TILES_ALL].sort(() => Math.random() - 0.5).slice(0, count/2);
-        available.forEach(t => deck.push(t, t));
+// Гарантированно решаемая раскладка:
+// паруем свободные плашки по очереди → игра всегда имеет ход
+function mjBuildSolvableDeck(layout) {
+    const n = layout.length;
+    let pos = layout.map((p, i) => ({ ...p, idx: i, done: false }));
+
+    function isFree(t) {
+        if (t.done) return false;
+        if (pos.find(o => !o.done && o.z === t.z+1 && o.y === t.y && o.x === t.x)) return false;
+        let L = pos.find(o => !o.done && o.z === t.z && o.y === t.y && o.x === t.x-1);
+        let R = pos.find(o => !o.done && o.z === t.z && o.y === t.y && o.x === t.x+1);
+        return !(L && R);
     }
-    return deck.sort(() => Math.random() - 0.5);
+
+    // Собираем список пар [charA, charB] которые нужно раздать
+    let pairs = [];
+    if (n === 144) {
+        MJ_TILES_ALL.forEach(t => { pairs.push([t,t]); pairs.push([t,t]); }); // 68 пар
+        pairs.push(['flw1','flw2'], ['flw3','flw4']); // 2 пары цветков
+        pairs.push(['sea1','sea2'], ['sea3','sea4']); // 2 пары сезонов
+    } else {
+        let types = [...MJ_TILES_ALL].sort(() => Math.random()-0.5);
+        for (let i = 0; i < n/2; i++) pairs.push([types[i % types.length], types[i % types.length]]);
+    }
+    pairs.sort(() => Math.random()-0.5);
+
+    let deck = new Array(n);
+    for (let i = 0; i < pairs.length; i++) {
+        let free = pos.filter(t => !t.done && isFree(t));
+        if (free.length < 2) { // резервный вариант — берём любые оставшиеся
+            free = pos.filter(t => !t.done);
+            if (free.length < 2) break;
+        }
+        free.sort(() => Math.random()-0.5);
+        deck[free[0].idx] = pairs[i][0];
+        deck[free[1].idx] = pairs[i][1];
+        free[0].done = true;
+        free[1].done = true;
+    }
+    return deck;
 }
 
 function mjMatch(t1, t2) {
@@ -576,20 +627,51 @@ function mjMatch(t1, t2) {
 
 function mjGenLayout(level) {
     let layout = [];
-    if (level === 'easy') { // 36
+    if (level === 'easy') {
+        // 🔺 Пирамида — 36 плашек
         for(let y=0; y<4; y++) for(let x=0; x<6; x++) layout.push({z:0, y, x});
         for(let y=1; y<3; y++) for(let x=1; x<5; x++) layout.push({z:1, y, x});
         for(let y=1; y<3; y++) for(let x=2; x<4; x++) layout.push({z:2, y, x});
-    } else if (level === 'medium') { // 72
-        for(let y=0; y<6; y++) for(let x=0; x<8; x++) layout.push({z:0, y, x});
-        for(let y=1; y<5; y++) for(let x=1; x<7; x++) layout.push({z:1, y, x});
-    } else { // hard 144
+
+    } else if (level === 'medium') {
+        // 💎 Ромб — 72 плашки, 3 слоя
+        // z=0: ромб  (46)
+        [[3,6],[2,7],[1,8],[0,9],[1,8],[2,7],[3,6]].forEach(([xs,xe], y) => {
+            for(let x=xs; x<=xe; x++) layout.push({z:0, y, x});
+        });
+        // z=1: ромб поменьше (18)
+        [[4,5],[3,6],[2,7],[3,6],[4,5]].forEach(([xs,xe], i) => {
+            const y = i+1;
+            for(let x=xs; x<=xe; x++) layout.push({z:1, y, x});
+        });
+        // z=2: вершина (8)
+        [[4,5],[3,6],[4,5]].forEach(([xs,xe], i) => {
+            const y = i+2;
+            for(let x=xs; x<=xe; x++) layout.push({z:2, y, x});
+        });
+
+    } else if (level === 'cross') {
+        // ✚ Крест — 68 плашек, 4 слоя
+        const addCross = (z, hxs,hxe, vys,vye, xs,xe) => {
+            // горизонталь
+            for(let x=hxs; x<=hxe; x++) { layout.push({z,y:3,x}); layout.push({z,y:4,x}); }
+            // вертикаль (без перекрытия)
+            for(let y=vys; y<=vye; y++) if(y!==3&&y!==4) { layout.push({z,y,x:xs}); layout.push({z,y,x:xe}); }
+        };
+        addCross(0, 0,9,  0,7,  4,5); // 20+12=32
+        addCross(1, 1,8,  1,6,  4,5); // 16+8=24
+        // z=2: вертикальная колонна в центре
+        for(let y=2; y<=5; y++) { layout.push({z:2,y,x:4}); layout.push({z:2,y,x:5}); } // 8
+        // z=3: самый верх
+        layout.push({z:3,y:3,x:4},{z:3,y:3,x:5},{z:3,y:4,x:4},{z:3,y:4,x:5}); // 4
+
+    } else {
+        // 🀄 Классика — 144 плашки
         for(let y=0; y<8; y++) for(let x=0; x<12; x++) layout.push({z:0, y, x});
         for(let y=2; y<6; y++) for(let x=2; x<10; x++) layout.push({z:1, y, x});
         for(let y=3; y<5; y++) for(let x=4; x<8; x++) layout.push({z:2, y, x});
         for(let y=3; y<5; y++) for(let x=5; x<7; x++) layout.push({z:3, y, x});
-        layout.push({z:0, y:3, x:-1}); layout.push({z:0, y:4, x:-1});
-        layout.push({z:0, y:3, x:12}); layout.push({z:0, y:4, x:12});
+        layout.push({z:0,y:3,x:-1},{z:0,y:4,x:-1},{z:0,y:3,x:12},{z:0,y:4,x:12});
     }
     return layout;
 }
@@ -677,7 +759,8 @@ function mjShuffleRemaining() {
     let chars = remaining.map(t => t.char).sort(() => Math.random() - 0.5);
     remaining.forEach((t, i) => {
         t.char = chars[i];
-        t.el.textContent = t.char;
+        const img = t.el.querySelector('img');
+        if (img) img.src = mjTileImg(t.char);
     });
     mjSelected = null;
     mjUpdateVisuals();
@@ -686,32 +769,47 @@ function mjShuffleRemaining() {
 
 function mjRender() {
     let wrap = $('mj-board');
+    let container = $('mj-wrap');
     wrap.innerHTML = '';
     
     let minX = Math.min(...mjTiles.map(t=>t.x)), maxX = Math.max(...mjTiles.map(t=>t.x));
     let minY = Math.min(...mjTiles.map(t=>t.y)), maxY = Math.max(...mjTiles.map(t=>t.y));
     let cols = maxX - minX + 1, rows = maxY - minY + 1;
 
-    let tileW = 26, tileH = 36;
+    let tileW = 48, tileH = 66;
     let boardW = cols * tileW, boardH = rows * tileH;
 
-    let scale = Math.min(1, 280 / boardW);
-    wrap.style.width = `${boardW}px`;
+    // Use real container size to fix right-shift in hard mode
+    let availW = (container.clientWidth  || 284) - 6;
+    let availH = (container.clientHeight || 294) - 6;
+    let scale = Math.min(1, availW / boardW);
+    let scaledW = boardW * scale;
+    let scaledH = boardH * scale;
+
+    wrap.style.width  = `${boardW}px`;
     wrap.style.height = `${boardH}px`;
     wrap.style.transform = `scale(${scale})`;
+    wrap.style.transformOrigin = 'top left';
+    wrap.style.marginLeft = `${Math.max(0, (availW - scaledW) / 2)}px`;
+    wrap.style.marginTop  = `${Math.max(0, (availH - scaledH) / 2)}px`;
 
     mjTiles.forEach(t => {
         let el = document.createElement('div');
         el.className = 'mj-tile';
-        el.textContent = t.char;
         el.style.zIndex = t.z * 1000 + t.y * 100 + t.x;
         
         let left = (t.x - minX) * tileW - (t.z * 4);
-        let top = (t.y - minY) * tileH - (t.z * 4);
+        let top  = (t.y - minY) * tileH - (t.z * 4);
         el.style.left = left + 'px';
-        el.style.top = top + 'px';
+        el.style.top  = top  + 'px';
 
-        el.addEventListener('click', e => { e.stopPropagation(); mjClick(t); });
+        let img = document.createElement('img');
+        img.src = mjTileImg(t.char);
+        img.alt = '';
+        img.draggable = false;
+        el.appendChild(img);
+
+        el.addEventListener('click',    e => { e.stopPropagation(); mjClick(t); });
         el.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); mjClick(t); });
         t.el = el;
         wrap.appendChild(el);
@@ -727,7 +825,7 @@ function mjNewGame() {
     $('mj-msg').style.color = '#888';
     
     let layout = mjGenLayout(mjDiff);
-    let deck = mjGetDeck(layout.length);
+    let deck = mjBuildSolvableDeck(layout);
     mjTotalPairs = layout.length / 2;
     
     mjTiles = layout.map((pos, i) => ({ ...pos, char: deck[i], removed: false, el: null }));
