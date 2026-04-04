@@ -59,13 +59,46 @@ function endBtnDrag() {
 }
 
 /* ═══════════════════════════════════════
-   УПРАВЛЕНИЕ ПАНЕЛЯМИ
+   УПРАВЛЕНИЕ ПАНЕЛЯМИ И РЕЕСТР ИГР
 ═══════════════════════════════════════ */
+const ALL_GAMES = [
+    { id:'blockblast',   icon:'⬛', name:'Block Blast' },
+    { id:'minesweeper',  icon:'💣', name:'Сапёр'       },
+    { id:'game2048',     icon:'🔢', name:'2048'         },
+    { id:'memory',       icon:'🃏', name:'Мемори'       },
+    { id:'mahjong',      icon:'🀄', name:'Маджонг'      },
+    { id:'flappybird',   icon:'🐦', name:'Flappy Bird'  },
+    { id:'sudoku',       icon:'🧩', name:'Судоку'       },
+];
+
+function loadEnabledGames() {
+    try {
+        const raw = localStorage.getItem('bb_enabled_games');
+        if (raw) {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr) && arr.length > 0) return new Set(arr);
+        }
+    } catch {}
+    return new Set(ALL_GAMES.map(g => g.id));
+}
+function saveEnabledGames() {
+    localStorage.setItem('bb_enabled_games', JSON.stringify([...enabledGames]));
+}
+
+let enabledGames = loadEnabledGames();
+const gameInited = {};
+
 let currentGame = localStorage.getItem('bb_game') || 'blockblast';
-let panelOpen=false, msPanelOpen=false, panel2048Open=false, memPanelOpen=false, flappyPanelOpen=false, pickerOpen=false;
+if (!enabledGames.has(currentGame)) {
+    currentGame = [...enabledGames][0] || 'blockblast';
+}
+
+let panelOpen=false, msPanelOpen=false, panel2048Open=false, memPanelOpen=false;
+let flappyPanelOpen=false, sudokuPanelOpen=false, mjPanelOpen=false;
+let pickerOpen=false, settingsOpen=false;
 let singleClickTimer=null;
 
-let panel, msPanel, panel2048, memPanel, flappyPanel, pickerEl;
+let panel, msPanel, panel2048, memPanel, flappyPanel, sudokuPanel, mjPanel, pickerEl, settingsEl;
 
 function positionEl(el, w) {
     const r=btn.getBoundingClientRect();
@@ -80,36 +113,59 @@ function positionEl(el, w) {
 
 function updatePickerActive() {
     document.querySelectorAll('.bb-game-card').forEach(c=>c.classList.remove('active'));
-    if (currentGame==='blockblast')       $('pick-bb')?.classList.add('active');
-    else if (currentGame==='minesweeper') $('pick-ms')?.classList.add('active');
-    else if (currentGame==='game2048')    $('pick-2048')?.classList.add('active');
-    else if (currentGame==='memory')      $('pick-mem')?.classList.add('active');
+    document.getElementById('pick-' + currentGame)?.classList.add('active');
+}
+
+function lazyInitGame(id) {
+    if (gameInited[id]) return;
+    gameInited[id] = true;
+    if (id==='blockblast')  newGame();
+    if (id==='minesweeper') msNewGame();
+    if (id==='game2048')    g2048New();
+    if (id==='memory')      memNewGame();
+    if (id==='mahjong')     mjNewGame();
+    if (id==='sudoku')      suNewGame();
 }
 
 function openCurrentGame() {
-    closePicker();
+    closePicker(); closeSettings();
     panel.classList.remove('open');       panelOpen=false;
     msPanel.classList.remove('open');     msPanelOpen=false;
     panel2048.classList.remove('open');   panel2048Open=false;
     memPanel.classList.remove('open');    memPanelOpen=false;
+    mjPanel.classList.remove('open');     mjPanelOpen=false;
     flappyPanel.classList.remove('open'); flappyPanelOpen=false; fbStopLoop();
+    sudokuPanel.classList.remove('open'); sudokuPanelOpen=false;
     cleanupDrag();
+    
     if (currentGame==='blockblast') {
+        lazyInitGame('blockblast');
         panel.classList.add('open'); panelOpen=true;
         positionEl(panel, 300);
     } else if (currentGame==='minesweeper') {
+        lazyInitGame('minesweeper');
         msPanel.classList.add('open'); msPanelOpen=true;
         positionEl(msPanel, 300);
     } else if (currentGame==='game2048') {
+        lazyInitGame('game2048');
         panel2048.classList.add('open'); panel2048Open=true;
         positionEl(panel2048, 300);
     } else if (currentGame==='memory') {
+        lazyInitGame('memory');
         memPanel.classList.add('open'); memPanelOpen=true;
         positionEl(memPanel, 400);
+    } else if (currentGame==='mahjong') {
+        lazyInitGame('mahjong');
+        mjPanel.classList.add('open'); mjPanelOpen=true;
+        positionEl(mjPanel, 310);
     } else if (currentGame==='flappybird') {
         flappyPanel.classList.add('open'); flappyPanelOpen=true;
         positionEl(flappyPanel, 310);
         fbInit();
+    } else if (currentGame==='sudoku') {
+        lazyInitGame('sudoku');
+        sudokuPanel.classList.add('open'); sudokuPanelOpen=true;
+        positionEl(sudokuPanel, 310);
     }
 }
 
@@ -118,18 +174,22 @@ function closePanels() {
     msPanel.classList.remove('open');     msPanelOpen=false;
     panel2048.classList.remove('open');   panel2048Open=false;
     memPanel.classList.remove('open');    memPanelOpen=false;
+    mjPanel.classList.remove('open');     mjPanelOpen=false;
     flappyPanel.classList.remove('open'); flappyPanelOpen=false; fbStopLoop();
+    sudokuPanel.classList.remove('open'); sudokuPanelOpen=false;
     cleanupDrag();
     clearInterval(memTimer);
+    clearInterval(mjTimerInt);
 }
 
 function showPicker() {
     pickerOpen=true; updatePickerActive();
+    rebuildPickerCards();
     pickerEl.classList.add('open'); positionEl(pickerEl, 280);
 }
 function closePicker() { pickerOpen=false; pickerEl?.classList.remove('open'); }
+function closeSettings() { settingsOpen=false; settingsEl?.classList.remove('open'); }
 
-/* двойной клик — выбор игры */
 function handleBtnActivate() {
     if (singleClickTimer) {
         clearTimeout(singleClickTimer); singleClickTimer=null;
@@ -138,7 +198,7 @@ function handleBtnActivate() {
         singleClickTimer = setTimeout(() => {
             singleClickTimer=null;
             if (pickerOpen) { closePicker(); return; }
-            (panelOpen||msPanelOpen||panel2048Open||memPanelOpen||flappyPanelOpen) ? closePanels() : openCurrentGame();
+            (panelOpen||msPanelOpen||panel2048Open||memPanelOpen||mjPanelOpen||flappyPanelOpen||sudokuPanelOpen) ? closePanels() : openCurrentGame();
         }, 320);
     }
 }
@@ -154,19 +214,20 @@ btn.addEventListener('touchend', e => {
     _bmoved=false;
 });
 
-/* генерация */
 eventSource.on(event_types.GENERATION_STARTED, () => btn.classList.add('bb-gen'));
 eventSource.on(event_types.GENERATION_ENDED,   () => btn.classList.remove('bb-gen'));
 eventSource.on(event_types.GENERATION_STOPPED, () => btn.classList.remove('bb-gen'));
 
 /* ═══════════════════════════════════════
-   ПАНЕЛЬ BLOCK BLAST
+   ПАНЕЛИ (Создание UI)
 ═══════════════════════════════════════ */
+
+/* --- BLOCK BLAST --- */
 panel = document.createElement('div');
 panel.className = 'bb-panel';
 panel.innerHTML = `
 <div class="bb-header">
-  <span class="bb-title">⬛ Block Blast</span>
+  <span class="bb-title"><span class="gc-icon gc-icon-block"></span> Block Blast</span>
   <div class="bb-score-box">
     <div class="bb-score-label">Score</div>
     <div class="bb-score" id="bb-score">0</div>
@@ -187,21 +248,18 @@ panel.innerHTML = `
   <div class="bb-slot" id="bb-s2"></div>
 </div>`;
 document.body.appendChild(panel);
-
-panel.addEventListener('click',    e => e.stopPropagation());
+panel.addEventListener('click', e => e.stopPropagation());
 panel.addEventListener('touchend', e => { if (dragIdx===null) e.stopPropagation(); });
 
-/* ═══════════════════════════════════════
-   ПАНЕЛЬ САПЁР
-═══════════════════════════════════════ */
+/* --- САПЁР --- */
 msPanel = document.createElement('div');
 msPanel.className = 'bb-panel ms-panel';
 msPanel.innerHTML = `
 <div class="bb-header">
-  <span class="bb-title">💣 Сапёр</span>
+  <span class="bb-title"><span class="gc-icon gc-icon-bomb"></span> Сапёр</span>
   <div class="ms-stats">
-    <span id="ms-mines-count">🚩 10</span>
-    <span id="ms-timer-disp">⏱ 0</span>
+    <span id="ms-mines-count"><span class="gc-icon gc-icon-flag"></span> 10</span>
+    <span id="ms-timer-disp"><span class="gc-icon gc-icon-timer"></span> 0</span>
   </div>
 </div>
 <div class="bb-board-wrap">
@@ -221,18 +279,15 @@ msPanel.innerHTML = `
   </div>
 </div>`;
 document.body.appendChild(msPanel);
-
-msPanel.addEventListener('click',    e => e.stopPropagation());
+msPanel.addEventListener('click', e => e.stopPropagation());
 msPanel.addEventListener('touchend', e => e.stopPropagation());
 
-/* ═══════════════════════════════════════
-   ПАНЕЛЬ 2048
-═══════════════════════════════════════ */
+/* --- 2048 --- */
 panel2048 = document.createElement('div');
 panel2048.className = 'bb-panel g2048-panel';
 panel2048.innerHTML = `
 <div class="bb-header">
-  <span class="bb-title">🔢 2048</span>
+  <span class="bb-title"><span class="gc-icon gc-icon-numbers"></span> 2048</span>
   <div class="bb-score-box">
     <div class="bb-score-label">Score</div>
     <div class="bb-score" id="g2048-score">0</div>
@@ -251,20 +306,17 @@ panel2048.innerHTML = `
   <span class="ms-hint">Свайп для управления</span>
 </div>`;
 document.body.appendChild(panel2048);
-
 panel2048.addEventListener('click', e => e.stopPropagation());
 
-/* ═══════════════════════════════════════
-   ПАНЕЛЬ МЕМОРИ
-═══════════════════════════════════════ */
+/* --- МЕМОРИ --- */
 memPanel = document.createElement('div');
 memPanel.className = 'bb-panel mem-panel';
 memPanel.innerHTML = `
 <div class="bb-header">
-  <span class="bb-title">🃏 Мемори</span>
+  <span class="bb-title"><span class="gc-icon gc-icon-cards"></span> Мемори</span>
   <div class="mem-hdr-right">
     <div class="mem-timer-box">
-      <span class="mem-timer-label">⏱</span>
+      <span class="gc-icon gc-icon-timer"></span>
       <span class="mem-timer-val" id="mem-timer">60</span>
     </div>
     <div class="mem-level-box">Ур. <span id="mem-level-num">1</span></div>
@@ -293,9 +345,96 @@ memPanel.innerHTML = `
   </div>
 </div>`;
 document.body.appendChild(memPanel);
-
-memPanel.addEventListener('click',    e => e.stopPropagation());
+memPanel.addEventListener('click', e => e.stopPropagation());
 memPanel.addEventListener('touchend', e => e.stopPropagation());
+
+/* --- FLAPPY BIRD --- */
+flappyPanel = document.createElement('div');
+flappyPanel.className = 'bb-panel fb-panel';
+flappyPanel.innerHTML = `
+  <div class="bb-header">
+    <span class="bb-title"><span class="gc-icon gc-icon-bird"></span> Flappy Bird</span>
+    <div class="bb-score-box">
+      <div class="bb-score-label">Score</div>
+      <div class="bb-score" id="fb-score">0</div>
+      <div class="bb-best">Best <span id="fb-best">0</span></div>
+    </div>
+  </div>
+  <div class="fb-wrap">
+    <canvas id="fb-canvas" width="288" height="320" class="fb-canvas"></canvas>
+  </div>
+  <div class="fb-help" id="fb-help">Click / Space to start</div>
+`;
+document.body.appendChild(flappyPanel);
+flappyPanel.addEventListener('click', e => e.stopPropagation());
+flappyPanel.addEventListener('touchend', e => e.stopPropagation());
+
+/* --- СУДОКУ --- */
+sudokuPanel = document.createElement('div');
+sudokuPanel.className = 'bb-panel su-panel';
+sudokuPanel.innerHTML = `
+<div class="bb-header">
+  <span class="bb-title"><span class="gc-icon gc-icon-cross"></span> Судоку</span>
+  <div class="su-hdr-right">
+    <div class="su-timer-box"><span class="gc-icon gc-icon-timer"></span> <span id="su-timer">0:00</span></div>
+    <div class="su-errors-box"><span class="gc-icon gc-icon-cross"></span> <span id="su-errors">0</span>/3</div>
+  </div>
+</div>
+<div class="bb-board-wrap">
+  <div class="su-grid" id="su-grid"></div>
+  <div class="bb-over" id="su-over">
+    <h3 id="su-over-title">🎉 Победа!</h3>
+    <p id="su-over-result"></p>
+    <button id="su-again">Сыграть ещё</button>
+  </div>
+</div>
+<div class="su-numpad" id="su-numpad"></div>
+<div class="ms-footer">
+  <span class="ms-hint">Выбери ячейку → введи цифру</span>
+  <div class="ms-difficulty">
+    <button class="ms-diff-btn su-diff" data-d="easy">Easy</button>
+    <button class="ms-diff-btn su-diff" data-d="medium">Med</button>
+    <button class="ms-diff-btn su-diff" data-d="hard">Hard</button>
+  </div>
+</div>`;
+document.body.appendChild(sudokuPanel);
+sudokuPanel.addEventListener('click', e => e.stopPropagation());
+sudokuPanel.addEventListener('touchend', e => e.stopPropagation());
+
+/* --- МАДЖОНГ --- */
+mjPanel = document.createElement('div');
+mjPanel.className = 'bb-panel mj-panel';
+mjPanel.innerHTML = `
+<div class="bb-header">
+  <span class="bb-title"><span class="gc-icon gc-icon-star"></span> Маджонг</span>
+  <div class="ms-stats" style="gap:5px;">
+    <span class="mj-timer-box" id="mj-timer-disp"><span class="gc-icon gc-icon-timer"></span> 0:00</span>
+    <span class="mj-pairs-box">Пары: <span id="mj-pairs-disp">0</span></span>
+  </div>
+</div>
+<div class="bb-board-wrap mj-wrap" id="mj-wrap">
+  <div class="mj-board" id="mj-board"></div>
+  <div class="bb-over" id="mj-over">
+    <h3 id="mj-over-title">🎉 Готово!</h3>
+    <p id="mj-result"></p>
+    <button id="mj-again">Играть ещё</button>
+  </div>
+</div>
+<div class="ms-footer">
+  <div style="display:flex; justify-content:space-between; width:100%; align-items:center; padding:0 8px;">
+     <span class="ms-hint" id="mj-msg">Найди пары</span>
+     <span class="ms-hint" id="mj-moves" style="font-weight:bold;">Ходов: 0</span>
+  </div>
+  <div class="ms-difficulty" style="margin-top:4px;">
+    <button class="ms-diff-btn mj-diff" data-d="easy">Easy</button>
+    <button class="ms-diff-btn mj-diff" data-d="medium">Med</button>
+    <button class="ms-diff-btn mj-diff" data-d="hard">Hard</button>
+    <button class="ms-diff-btn mj-shuffle" id="mj-shuffle-btn" title="Перемешать оставшиеся плашки">🔀</button>
+  </div>
+</div>`;
+document.body.appendChild(mjPanel);
+mjPanel.addEventListener('click', e => e.stopPropagation());
+mjPanel.addEventListener('touchend', e => e.stopPropagation());
 
 /* ═══════════════════════════════════════
    ВЫБОР ИГРЫ (ПИКЕР)
@@ -303,68 +442,342 @@ memPanel.addEventListener('touchend', e => e.stopPropagation());
 pickerEl = document.createElement('div');
 pickerEl.className = 'bb-picker';
 pickerEl.innerHTML = `
-<div class="bb-picker-title">Выбери игру</div>
-<div class="bb-picker-row">
-  <div class="bb-game-card" id="pick-bb">
-    <div class="bb-game-icon">⬛</div>
-    <div class="bb-game-name">Block Blast</div>
-  </div>
-  <div class="bb-game-card" id="pick-ms">
-    <div class="bb-game-icon">💣</div>
-    <div class="bb-game-name">Сапёр</div>
-  </div>
-  <div class="bb-game-card" id="pick-2048">
-    <div class="bb-game-icon">🔢</div>
-    <div class="bb-game-name">2048</div>
-  </div>
-  <div class="bb-game-card" id="pick-mem">
-    <div class="bb-game-icon">🃏</div>
-    <div class="bb-game-name">Мемори</div>
-  </div>
-  <div class="bb-game-card" id="pick-fb">
-    <div class="bb-game-icon">🐦</div>
-    <div class="bb-game-name">Flappy Bird</div>
-  </div>
-</div>`;
+<div class="bb-picker-title">
+  Выбери игру
+  <button class="bb-settings-btn" id="bb-settings-btn" title="Настройки игр"><span class="gc-icon gc-icon-settings"></span></button>
+</div>
+<div class="bb-picker-row" id="bb-picker-row"></div>`;
 document.body.appendChild(pickerEl);
-
 pickerEl.addEventListener('click', e => e.stopPropagation());
 
-$('pick-bb').addEventListener('click', e => {
+settingsEl = document.createElement('div');
+settingsEl.className = 'bb-picker bb-settings-panel';
+settingsEl.innerHTML = `
+<div class="bb-picker-title"><span class="gc-icon gc-icon-settings" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></span> ИГРЫ</div>
+<div class="bb-settings-list" id="bb-settings-list"></div>`;
+document.body.appendChild(settingsEl);
+settingsEl.addEventListener('click', e => e.stopPropagation());
+
+function rebuildPickerCards() {
+    const row = $('bb-picker-row');
+    row.innerHTML = '';
+    ALL_GAMES.forEach(g => {
+        if (!enabledGames.has(g.id)) return;
+        const card = document.createElement('div');
+        card.className = 'bb-game-card' + (currentGame===g.id ? ' active' : '');
+        card.id = 'pick-' + g.id;
+        const iconMap = {blockblast:'gc-icon-block',minesweeper:'gc-icon-bomb',game2048:'gc-icon-numbers',memory:'gc-icon-cards',mahjong:'gc-icon-star',flappybird:'gc-icon-bird',sudoku:'gc-icon-cross'};
+        const svgCls = iconMap[g.id] || '';
+        card.innerHTML = '<div class="bb-game-icon"><span class="gc-icon ' + svgCls + '"></span></div><div class="bb-game-name">' + g.name + '</div>';
+        card.addEventListener('click', e => {
+            e.stopPropagation();
+            currentGame = g.id;
+            localStorage.setItem('bb_game', currentGame);
+            closePicker();
+            openCurrentGame();
+        });
+        row.appendChild(card);
+    });
+}
+
+function rebuildSettingsToggles() {
+    const list = $('bb-settings-list');
+    list.innerHTML = '';
+    ALL_GAMES.forEach(g => {
+        const row = document.createElement('div');
+        row.className = 'bb-settings-row';
+        const isOn = enabledGames.has(g.id);
+        const imap = {blockblast:'gc-icon-block',minesweeper:'gc-icon-bomb',game2048:'gc-icon-numbers',memory:'gc-icon-cards',mahjong:'gc-icon-star',flappybird:'gc-icon-bird',sudoku:'gc-icon-cross'};
+        const sc = imap[g.id] || '';
+        row.innerHTML = '<span class="bb-settings-icon"><span class="gc-icon ' + sc + '"></span></span>'
+            + '<span class="bb-settings-name">' + g.name + '</span>'
+            + '<button class="bb-toggle' + (isOn?' on':'') + '" data-id="' + g.id + '">' + (isOn?'ВКЛ':'ВЫКЛ') + '</button>';
+        list.appendChild(row);
+    });
+    list.querySelectorAll('.bb-toggle').forEach(btn => {
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            const id = btn.dataset.id;
+            if (enabledGames.has(id)) {
+                if (enabledGames.size <= 1) return;
+                enabledGames.delete(id);
+                if (currentGame === id) {
+                    currentGame = [...enabledGames][0];
+                    localStorage.setItem('bb_game', currentGame);
+                }
+            } else {
+                enabledGames.add(id);
+            }
+            saveEnabledGames();
+            rebuildSettingsToggles();
+        });
+    });
+}
+
+$('bb-settings-btn').addEventListener('click', e => {
     e.stopPropagation();
-    currentGame='blockblast'; localStorage.setItem('bb_game', currentGame);
-    closePicker(); openCurrentGame();
-});
-$('pick-ms').addEventListener('click', e => {
-    e.stopPropagation();
-    currentGame='minesweeper'; localStorage.setItem('bb_game', currentGame);
-    closePicker(); openCurrentGame();
-});
-$('pick-2048').addEventListener('click', e => {
-    e.stopPropagation();
-    currentGame='game2048'; localStorage.setItem('bb_game', currentGame);
-    closePicker(); openCurrentGame();
-});
-$('pick-mem').addEventListener('click', e => {
-    e.stopPropagation();
-    currentGame='memory'; localStorage.setItem('bb_game', currentGame);
-    closePicker(); openCurrentGame();
-    memNewGame();
-});
-$('pick-fb').addEventListener('click', e => {
-    e.stopPropagation();
-    currentGame='flappybird'; localStorage.setItem('bb_game', currentGame);
-    closePicker(); openCurrentGame();
+    if (settingsOpen) closeSettings();
+    else {
+        settingsOpen = true;
+        rebuildSettingsToggles();
+        settingsEl.classList.add('open');
+        positionEl(settingsEl, 270);
+    }
 });
 
 document.addEventListener('click', () => {
-    if (pickerOpen)                                          closePicker();
-    if (panelOpen||msPanelOpen||panel2048Open||memPanelOpen||flappyPanelOpen) closePanels();
+    if (settingsOpen) closeSettings();
+    if (pickerOpen)   closePicker();
+    if (panelOpen||msPanelOpen||panel2048Open||memPanelOpen||mjPanelOpen||flappyPanelOpen||sudokuPanelOpen) closePanels();
 });
 
 /* ═══════════════════════════════════════
-   BLOCK BLAST — ЛОГИКА
+   МАДЖОНГ — ЛОГИКА
 ═══════════════════════════════════════ */
+const MJ_TILES_ALL = [
+    '🀙','🀚','🀛','🀜','🀝','🀞','🀟','🀠','🀡', // Dots
+    '🀐','🀑','🀒','🀓','🀔','🀕','🀖','🀗','🀘', // Bamboo
+    '🀇','🀈','🀉','🀊','🀋','🀌','🀍','🀎','🀏', // Characters
+    '🀀','🀁','🀂','🀃', // Winds
+    '🀄','🀅','🀆' // Dragons
+];
+const MJ_SPECIALS = [
+    ['🀢','🀣','🀤','🀥'], // Flowers
+    ['🀦','🀧','🀨','🀩']  // Seasons
+];
+
+let mjDiff = localStorage.getItem('mj_diff') || 'easy';
+let mjTiles = [];
+let mjSelected = null;
+let mjPairsFound = 0;
+let mjTotalPairs = 0;
+let mjTimerInt = null;
+let mjSecs = 0;
+let mjGameOver = false;
+
+function mjGetDeck(count) {
+    let deck = [];
+    if (count === 144) {
+        for(let i=0; i<4; i++) deck.push(...MJ_TILES_ALL);
+        deck.push(...MJ_SPECIALS[0], ...MJ_SPECIALS[1]);
+    } else {
+        let available = [...MJ_TILES_ALL].sort(() => Math.random() - 0.5).slice(0, count/2);
+        available.forEach(t => deck.push(t, t));
+    }
+    return deck.sort(() => Math.random() - 0.5);
+}
+
+function mjMatch(t1, t2) {
+    if (t1 === t2) return true;
+    if (MJ_SPECIALS[0].includes(t1) && MJ_SPECIALS[0].includes(t2)) return true;
+    if (MJ_SPECIALS[1].includes(t1) && MJ_SPECIALS[1].includes(t2)) return true;
+    return false;
+}
+
+function mjGenLayout(level) {
+    let layout = [];
+    if (level === 'easy') { // 36
+        for(let y=0; y<4; y++) for(let x=0; x<6; x++) layout.push({z:0, y, x});
+        for(let y=1; y<3; y++) for(let x=1; x<5; x++) layout.push({z:1, y, x});
+        for(let y=1; y<3; y++) for(let x=2; x<4; x++) layout.push({z:2, y, x});
+    } else if (level === 'medium') { // 72
+        for(let y=0; y<6; y++) for(let x=0; x<8; x++) layout.push({z:0, y, x});
+        for(let y=1; y<5; y++) for(let x=1; x<7; x++) layout.push({z:1, y, x});
+    } else { // hard 144
+        for(let y=0; y<8; y++) for(let x=0; x<12; x++) layout.push({z:0, y, x});
+        for(let y=2; y<6; y++) for(let x=2; x<10; x++) layout.push({z:1, y, x});
+        for(let y=3; y<5; y++) for(let x=4; x<8; x++) layout.push({z:2, y, x});
+        for(let y=3; y<5; y++) for(let x=5; x<7; x++) layout.push({z:3, y, x});
+        layout.push({z:0, y:3, x:-1}); layout.push({z:0, y:4, x:-1});
+        layout.push({z:0, y:3, x:12}); layout.push({z:0, y:4, x:12});
+    }
+    return layout;
+}
+
+function mjIsFree(tile) {
+    if (tile.removed) return false;
+    let top = mjTiles.find(t => !t.removed && t.z === tile.z + 1 && t.y === tile.y && t.x === tile.x);
+    if (top) return false;
+    let left = mjTiles.find(t => !t.removed && t.z === tile.z && t.y === tile.y && t.x === tile.x - 1);
+    let right = mjTiles.find(t => !t.removed && t.z === tile.z && t.y === tile.y && t.x === tile.x + 1);
+    if (left && right) return false;
+    return true;
+}
+
+function mjGetMoves() {
+    let free = mjTiles.filter(t => !t.removed && mjIsFree(t));
+    let moves = 0;
+    for(let i=0; i<free.length; i++) {
+        for(let j=i+1; j<free.length; j++) {
+            if (mjMatch(free[i].char, free[j].char)) moves++;
+        }
+    }
+    return moves;
+}
+
+function mjUpdateVisuals() {
+    mjTiles.forEach(t => {
+        if (t.removed) return;
+        const isFree = mjIsFree(t);
+        t.el.classList.toggle('blocked', !isFree);
+        t.el.classList.toggle('selected', mjSelected === t);
+    });
+}
+
+function mjCheckState() {
+    let moves = mjGetMoves();
+    $('mj-moves').textContent = `Ходов: ${moves}`;
+    const msg = $('mj-msg');
+    $('mj-pairs-disp').textContent = `${mjPairsFound}/${mjTotalPairs}`;
+    
+    if (mjPairsFound === mjTotalPairs) {
+        mjWin();
+    } else if (moves === 0) {
+        msg.textContent = 'Нет ходов! Перемешайте.';
+        msg.style.color = '#e94560';
+    } else {
+        msg.textContent = 'Найди пары';
+        msg.style.color = '#888';
+    }
+}
+
+function mjClick(tile) {
+    if (tile.removed || !mjIsFree(tile) || mjGameOver) return;
+    
+    if (!mjSelected) {
+        mjSelected = tile;
+        mjUpdateVisuals();
+    } else {
+        if (mjSelected === tile) {
+            mjSelected = null;
+            mjUpdateVisuals();
+        } else if (mjMatch(mjSelected.char, tile.char)) {
+            mjSelected.removed = true;
+            tile.removed = true;
+            mjSelected.el.classList.add('removing');
+            tile.el.classList.add('removing');
+            setTimeout(() => {
+                mjSelected.el.style.display = 'none';
+                tile.el.style.display = 'none';
+                mjSelected = null;
+                mjPairsFound++;
+                mjUpdateVisuals();
+                mjCheckState();
+            }, 150);
+        } else {
+            mjSelected = tile;
+            mjUpdateVisuals();
+        }
+    }
+}
+
+function mjShuffleRemaining() {
+    if (mjGameOver) return;
+    let remaining = mjTiles.filter(t => !t.removed);
+    let chars = remaining.map(t => t.char).sort(() => Math.random() - 0.5);
+    remaining.forEach((t, i) => {
+        t.char = chars[i];
+        t.el.textContent = t.char;
+    });
+    mjSelected = null;
+    mjUpdateVisuals();
+    mjCheckState();
+}
+
+function mjRender() {
+    let wrap = $('mj-board');
+    wrap.innerHTML = '';
+    
+    let minX = Math.min(...mjTiles.map(t=>t.x)), maxX = Math.max(...mjTiles.map(t=>t.x));
+    let minY = Math.min(...mjTiles.map(t=>t.y)), maxY = Math.max(...mjTiles.map(t=>t.y));
+    let cols = maxX - minX + 1, rows = maxY - minY + 1;
+
+    let tileW = 26, tileH = 36;
+    let boardW = cols * tileW, boardH = rows * tileH;
+
+    let scale = Math.min(1, 280 / boardW);
+    wrap.style.width = `${boardW}px`;
+    wrap.style.height = `${boardH}px`;
+    wrap.style.transform = `scale(${scale})`;
+
+    mjTiles.forEach(t => {
+        let el = document.createElement('div');
+        el.className = 'mj-tile';
+        el.textContent = t.char;
+        el.style.zIndex = t.z * 1000 + t.y * 100 + t.x;
+        
+        let left = (t.x - minX) * tileW - (t.z * 4);
+        let top = (t.y - minY) * tileH - (t.z * 4);
+        el.style.left = left + 'px';
+        el.style.top = top + 'px';
+
+        el.addEventListener('click', e => { e.stopPropagation(); mjClick(t); });
+        el.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); mjClick(t); });
+        t.el = el;
+        wrap.appendChild(el);
+    });
+    mjUpdateVisuals();
+    mjCheckState();
+}
+
+function mjNewGame() {
+    clearInterval(mjTimerInt);
+    mjSecs = 0; mjPairsFound = 0; mjSelected = null; mjGameOver = false;
+    $('mj-over').classList.remove('show');
+    $('mj-msg').style.color = '#888';
+    
+    let layout = mjGenLayout(mjDiff);
+    let deck = mjGetDeck(layout.length);
+    mjTotalPairs = layout.length / 2;
+    
+    mjTiles = layout.map((pos, i) => ({ ...pos, char: deck[i], removed: false, el: null }));
+    
+    mjRender();
+    
+    mjPanel.querySelectorAll('.mj-diff').forEach(b => b.classList.toggle('active', b.dataset.d === mjDiff));
+    
+    $('mj-timer-disp').innerHTML = '<span class="gc-icon gc-icon-timer"></span> 0:00';
+    mjTimerInt = setInterval(() => {
+        if (mjGameOver) return;
+        mjSecs++;
+        let m = Math.floor(mjSecs/60), s = mjSecs%60;
+        $('mj-timer-disp').innerHTML = `<span class="gc-icon gc-icon-timer"></span> ${m}:${s.toString().padStart(2,'0')}`;
+    }, 1000);
+}
+
+function mjWin() {
+    mjGameOver = true;
+    clearInterval(mjTimerInt);
+    let m = Math.floor(mjSecs/60), s = mjSecs%60;
+    let bKey = `mj_best_${mjDiff}`;
+    let prev = +localStorage.getItem(bKey) || 0;
+    if (!prev || mjSecs < prev) localStorage.setItem(bKey, mjSecs);
+    let best = +localStorage.getItem(bKey);
+    let bm = Math.floor(best/60), bs = best%60;
+    
+    $('mj-result').textContent = `Время: ${m}:${s.toString().padStart(2,'0')} · Рекорд: ${bm}:${bs.toString().padStart(2,'0')}`;
+    setTimeout(() => $('mj-over').classList.add('show'), 400);
+}
+
+$('mj-again').addEventListener('click', e => { e.stopPropagation(); mjNewGame(); });
+$('mj-again').addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); mjNewGame(); });
+$('mj-shuffle-btn').addEventListener('click', e => { e.stopPropagation(); mjShuffleRemaining(); });
+$('mj-shuffle-btn').addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); mjShuffleRemaining(); });
+
+mjPanel.querySelectorAll('.mj-diff').forEach(b => {
+    b.addEventListener('click', e => {
+        e.stopPropagation();
+        mjDiff = b.dataset.d; localStorage.setItem('mj_diff', mjDiff);
+        mjNewGame();
+    });
+});
+
+
+/* ═══════════════════════════════════════
+   ОСТАЛЬНЫЕ ИГРЫ (Оригинальная логика)
+═══════════════════════════════════════ */
+
+/* --- Block Blast Логика --- */
 const ROWS=8, COLS=8;
 const COLORS=['#e94560','#f5a623','#4caf50','#2196f3','#9c27b0','#00bcd4','#ff5722','#e91e63'];
 const SHAPES=[
@@ -462,12 +875,7 @@ function clearGhost() {
         if (!board[r][c]) el.classList.remove('filled');
     });
 }
-
-/* ═══════════════════════════════════════
-   BLOCK BLAST — DRAG
-═══════════════════════════════════════ */
 let dragIdx=null, dragGhost=null, dragOffX=0, dragOffY=0;
-
 function cleanupDrag() {
     if (dragGhost){dragGhost.remove(); dragGhost=null;}
     clearGhost();
@@ -540,8 +948,6 @@ function drawPieces() {
         slot.appendChild(g);
     }
 }
-
-/* глобальные события */
 document.addEventListener('mousemove', e => {
     if (_bdrag) moveBtn(e.clientX,e.clientY);
     if (dragIdx!==null) movePieceDrag(e.clientX,e.clientY);
@@ -559,93 +965,51 @@ document.addEventListener('touchend', e => {
     endBtnDrag();
     if (dragIdx!==null){const t=e.changedTouches[0]; endPieceDrag(t.clientX,t.clientY);}
 });
-
 $('bb-again').addEventListener('click',    e=>{e.stopPropagation(); newGame();});
 $('bb-again').addEventListener('touchend', e=>{e.preventDefault(); e.stopPropagation(); newGame();});
 
-/* ═══════════════════════════════════════
-   САПЁР — ЛОГИКА
-═══════════════════════════════════════ */
-const MS_CFG = {
-    easy:   {rows:9, cols:9, mines:10},
-    medium: {rows:9, cols:9, mines:15},
-    hard:   {rows:9, cols:9, mines:20},
-};
-let msDiff      = localStorage.getItem('ms_diff') || 'easy';
-let msCells     = [];
-let msMineTotal, msFlags, msRevCount, msDead, msWon, msStarted;
-let msTimerInt  = null, msSecs = 0;
-
+/* --- Сапёр Логика --- */
+const MS_CFG = { easy: {rows:9, cols:9, mines:10}, medium: {rows:9, cols:9, mines:15}, hard: {rows:9, cols:9, mines:20} };
+let msDiff = localStorage.getItem('ms_diff') || 'easy', msCells = [];
+let msMineTotal, msFlags, msRevCount, msDead, msWon, msStarted, msTimerInt = null, msSecs = 0;
 function msNewGame() {
-    const cfg = MS_CFG[msDiff];
-    clearInterval(msTimerInt); msTimerInt=null; msSecs=0;
-    msMineTotal=cfg.mines; msFlags=0; msRevCount=0;
-    msDead=false; msWon=false; msStarted=false;
-    $('ms-mines-count').textContent=`🚩 ${msMineTotal}`;
-    $('ms-timer-disp').textContent=`⏱ 0`;
-    $('ms-over').classList.remove('show');
-    msDrawBoard(cfg);
+    const cfg = MS_CFG[msDiff]; clearInterval(msTimerInt); msTimerInt=null; msSecs=0;
+    msMineTotal=cfg.mines; msFlags=0; msRevCount=0; msDead=false; msWon=false; msStarted=false;
+    $('ms-mines-count').textContent=`🚩 ${msMineTotal}`; $('ms-timer-disp').textContent=`⏱ 0`;
+    $('ms-over').classList.remove('show'); msDrawBoard(cfg);
 }
-
 function msDrawBoard({rows,cols}) {
-    const brd=$('ms-board');
-    brd.style.gridTemplateColumns=`repeat(${cols},1fr)`;
-    brd.innerHTML='';
-    msCells = Array.from({length:rows}, (_,r) =>
-        Array.from({length:cols}, (_,c) => {
-            const el=document.createElement('div');
-            el.className='ms-cell';
-            el.dataset.r=r; el.dataset.c=c;
-            let _lpt=null, _lpf=false, _lastT=0;
-            let _mlpt=null, _mlf=false;
-
-            el.addEventListener('mousedown', e => {
-                if (e.button!==0) return;
-                e.stopPropagation();
-                _mlf=false;
-                _mlpt=setTimeout(()=>{ _mlf=true; _mlpt=null; msFlag(r,c); }, 500);
-            });
-            el.addEventListener('mouseup', ()=>{
-                if (_mlpt){clearTimeout(_mlpt); _mlpt=null;}
-            });
-            el.addEventListener('mouseleave', ()=>{
-                if (_mlpt){clearTimeout(_mlpt); _mlpt=null;}
-            });
-
-            el.addEventListener('click', e => {
-                e.stopPropagation();
-                if (Date.now()-_lastT<350) return;
-                if (_mlf) { _mlf=false; return; }
-                msReveal(r,c);
-            });
-            el.addEventListener('contextmenu', e => {
-                e.preventDefault(); e.stopPropagation(); msFlag(r,c);
-            });
-            el.addEventListener('touchstart', e => {
-                e.stopPropagation(); _lpf=false;
-                _lpt=setTimeout(()=>{ _lpf=true; msFlag(r,c); },500);
-            },{passive:true});
-            el.addEventListener('touchend', e => {
-                e.stopPropagation(); _lastT=Date.now();
-                if (_lpt){clearTimeout(_lpt); _lpt=null;}
-                if (!_lpf) msReveal(r,c);
-                _lpf=false;
-            });
-            el.addEventListener('touchmove', ()=>{
-                if (_lpt){clearTimeout(_lpt); _lpt=null;}
-            });
-            brd.appendChild(el);
-            return {el, value:0, revealed:false, flagged:false};
-        })
-    );
+    const brd=$('ms-board'); brd.style.gridTemplateColumns=`repeat(${cols},1fr)`; brd.innerHTML='';
+    msCells = Array.from({length:rows}, (_,r) => Array.from({length:cols}, (_,c) => {
+        const el=document.createElement('div'); el.className='ms-cell'; el.dataset.r=r; el.dataset.c=c;
+        let _lpt=null, _lpf=false, _lastT=0, _mlpt=null, _mlf=false;
+        el.addEventListener('mousedown', e => {
+            if (e.button!==0) return; e.stopPropagation(); _mlf=false;
+            _mlpt=setTimeout(()=>{ _mlf=true; _mlpt=null; msFlag(r,c); }, 500);
+        });
+        el.addEventListener('mouseup', ()=>{ if (_mlpt){clearTimeout(_mlpt); _mlpt=null;} });
+        el.addEventListener('mouseleave', ()=>{ if (_mlpt){clearTimeout(_mlpt); _mlpt=null;} });
+        el.addEventListener('click', e => {
+            e.stopPropagation(); if (Date.now()-_lastT<350) return;
+            if (_mlf) { _mlf=false; return; } msReveal(r,c);
+        });
+        el.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); msFlag(r,c); });
+        el.addEventListener('touchstart', e => {
+            e.stopPropagation(); _lpf=false; _lpt=setTimeout(()=>{ _lpf=true; msFlag(r,c); },500);
+        },{passive:true});
+        el.addEventListener('touchend', e => {
+            e.stopPropagation(); _lastT=Date.now();
+            if (_lpt){clearTimeout(_lpt); _lpt=null;}
+            if (!_lpf) msReveal(r,c); _lpf=false;
+        });
+        el.addEventListener('touchmove', ()=>{ if (_lpt){clearTimeout(_lpt); _lpt=null;} });
+        brd.appendChild(el); return {el, value:0, revealed:false, flagged:false};
+    }));
 }
-
 function msPlaceMines(rows,cols,mines,safeR,safeC) {
-    const grid=Array.from({length:rows},()=>Array(cols).fill(0));
-    const safe=new Set();
+    const grid=Array.from({length:rows},()=>Array(cols).fill(0)), safe=new Set();
     for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
-        const nr=safeR+dr, nc=safeC+dc;
-        if (nr>=0&&nr<rows&&nc>=0&&nc<cols) safe.add(`${nr},${nc}`);
+        const nr=safeR+dr, nc=safeC+dc; if (nr>=0&&nr<rows&&nc>=0&&nc<cols) safe.add(`${nr},${nc}`);
     }
     let placed=0;
     while (placed<mines) {
@@ -653,30 +1017,22 @@ function msPlaceMines(rows,cols,mines,safeR,safeC) {
         if (!grid[r][c]&&!safe.has(`${r},${c}`)){grid[r][c]=-1; placed++;}
     }
     for (let r=0;r<rows;r++) for (let c=0;c<cols;c++) {
-        if (grid[r][c]===-1) continue;
-        let n=0;
+        if (grid[r][c]===-1) continue; let n=0;
         for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
-            const nr=r+dr, nc=c+dc;
-            if (nr>=0&&nr<rows&&nc>=0&&nc<cols&&grid[nr][nc]===-1) n++;
+            const nr=r+dr, nc=c+dc; if (nr>=0&&nr<rows&&nc>=0&&nc<cols&&grid[nr][nc]===-1) n++;
         }
         grid[r][c]=n;
     }
     return grid;
 }
-
 function msReveal(r,c) {
-    if (msDead||msWon) return;
-    const cfg=MS_CFG[msDiff];
-    const cell=msCells[r]?.[c];
+    if (msDead||msWon) return; const cfg=MS_CFG[msDiff], cell=msCells[r]?.[c];
     if (!cell||cell.revealed||cell.flagged) return;
-
     if (!msStarted) {
-        msStarted=true;
-        const grid=msPlaceMines(cfg.rows,cfg.cols,cfg.mines,r,c);
+        msStarted=true; const grid=msPlaceMines(cfg.rows,cfg.cols,cfg.mines,r,c);
         msCells.forEach((row,ri)=>row.forEach((cel,ci)=>{ cel.value=grid[ri][ci]; }));
-        msTimerInt=setInterval(()=>{ msSecs++; $('ms-timer-disp').textContent=`⏱ ${msSecs}`; },1000);
+        msTimerInt=setInterval(()=>{ msSecs++; $('ms-timer-disp').innerHTML=`<span class="gc-icon gc-icon-timer"></span> ${msSecs}`; },1000);
     }
-
     if (cell.value===-1) {
         cell.revealed=true; cell.el.classList.add('revealed','mine-hit'); cell.el.textContent='💥';
         msDead=true; clearInterval(msTimerInt);
@@ -685,653 +1041,431 @@ function msReveal(r,c) {
                 if (cc.value===-1&&!cc.revealed){cc.el.classList.add('revealed','mine-reveal'); cc.el.textContent='💣';}
                 if (cc.flagged&&cc.value!==-1) cc.el.textContent='❌';
             });
-            $('ms-over-title').textContent='💥 Подрыв!';
-            $('ms-result').textContent=`Время: ${msSecs}с`;
+            $('ms-over-title').textContent='💥 Подрыв!'; $('ms-result').textContent=`Время: ${msSecs}с`;
             $('ms-over').classList.add('show');
-        }, 600);
-        return;
+        }, 600); return;
     }
-
-    msFlood(r,c,cfg);
-    msCheckWin(cfg);
+    msFlood(r,c,cfg); msCheckWin(cfg);
 }
-
 function msFlood(r,c,cfg) {
     const q=[[r,c]], vis=new Set([`${r},${c}`]);
     while (q.length) {
-        const [cr,cc]=q.shift();
-        const cell=msCells[cr][cc];
+        const [cr,cc]=q.shift(), cell=msCells[cr][cc];
         if (cell.revealed||cell.flagged) continue;
         cell.revealed=true; cell.el.classList.add('revealed'); msRevCount++;
         if (cell.value>0){ cell.el.textContent=cell.value; cell.el.classList.add(`ms-n${cell.value}`); }
         if (cell.value===0) {
             for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
                 const nr=cr+dr, nc=cc+dc;
-                if (nr>=0&&nr<cfg.rows&&nc>=0&&nc<cfg.cols&&!vis.has(`${nr},${nc}`)){
-                    vis.add(`${nr},${nc}`); q.push([nr,nc]);
-                }
+                if (nr>=0&&nr<cfg.rows&&nc>=0&&nc<cfg.cols&&!vis.has(`${nr},${nc}`)){ vis.add(`${nr},${nc}`); q.push([nr,nc]); }
             }
         }
     }
 }
-
 function msFlag(r,c) {
-    if (msDead||msWon||!msStarted) return;
-    const cell=msCells[r]?.[c];
-    if (!cell||cell.revealed) return;
+    if (msDead||msWon||!msStarted) return; const cell=msCells[r]?.[c]; if (!cell||cell.revealed) return;
     cell.flagged=!cell.flagged;
     if (cell.flagged){cell.el.classList.add('flagged'); cell.el.textContent='🚩'; msFlags++;}
     else{cell.el.classList.remove('flagged'); cell.el.textContent=''; msFlags--;}
     $('ms-mines-count').textContent=`🚩 ${msMineTotal-msFlags}`;
 }
-
 function msCheckWin(cfg) {
     if (msRevCount===cfg.rows*cfg.cols-cfg.mines) {
         msWon=true; clearInterval(msTimerInt);
-        msCells.flat().forEach(cc=>{
-            if (!cc.revealed&&!cc.flagged){cc.el.textContent='🚩'; cc.el.classList.add('flagged');}
-        });
+        msCells.flat().forEach(cc=>{ if (!cc.revealed&&!cc.flagged){cc.el.textContent='🚩'; cc.el.classList.add('flagged');} });
         const bKey=`ms_best_${msDiff}`, prev=+localStorage.getItem(bKey)||0;
         if (!prev||msSecs<prev) localStorage.setItem(bKey,msSecs);
-        const bestT=localStorage.getItem(bKey);
-        $('ms-over-title').textContent='🎉 Победа!';
-        $('ms-result').textContent=`Время: ${msSecs}с · Рекорд: ${bestT}с`;
+        $('ms-over-title').textContent='🎉 Победа!'; $('ms-result').textContent=`Время: ${msSecs}с · Рекорд: ${localStorage.getItem(bKey)}с`;
         $('ms-over').classList.add('show');
     }
 }
-
 $('ms-again').addEventListener('click',    e=>{e.stopPropagation(); msNewGame();});
 $('ms-again').addEventListener('touchend', e=>{e.preventDefault(); e.stopPropagation(); msNewGame();});
-
 msPanel.querySelectorAll('.ms-diff-btn').forEach(b=>{
-    if (b.dataset.d===msDiff) b.classList.add('active');
-    b.addEventListener('click', e=>{
-        e.stopPropagation();
-        msDiff=b.dataset.d; localStorage.setItem('ms_diff',msDiff);
-        msPanel.querySelectorAll('.ms-diff-btn').forEach(x=>x.classList.remove('active'));
-        b.classList.add('active');
-        msNewGame();
-    });
+    if (b.dataset.d===msDiff && !b.classList.contains('mj-diff') && !b.classList.contains('su-diff')) b.classList.add('active');
+    if(!b.classList.contains('mj-diff') && !b.classList.contains('su-diff')) {
+        b.addEventListener('click', e=>{
+            e.stopPropagation(); msDiff=b.dataset.d; localStorage.setItem('ms_diff',msDiff);
+            msPanel.querySelectorAll('.ms-diff-btn').forEach(x=>x.classList.remove('active'));
+            b.classList.add('active'); msNewGame();
+        });
+    }
 });
 
-/* ═══════════════════════════════════════
-   2048 — ЛОГИКА
-═══════════════════════════════════════ */
-let g2048Grid, g2048Score, g2048Dead, g2048Won;
-let g2048Best = +localStorage.getItem('g2048_best') || 0;
+/* --- 2048 Логика --- */
+let g2048Grid, g2048Score, g2048Dead, g2048Won, g2048Best = +localStorage.getItem('g2048_best') || 0;
 $('g2048-best').textContent = g2048Best;
-
 function g2048New() {
     g2048Grid = Array.from({length:4}, () => Array(4).fill(0));
     g2048Score = 0; g2048Dead = false; g2048Won = false;
-    $('g2048-score').textContent = '0';
-    $('g2048-over').classList.remove('show');
-    g2048Spawn(); g2048Spawn();
-    g2048Draw();
+    $('g2048-score').textContent = '0'; $('g2048-over').classList.remove('show');
+    g2048Spawn(); g2048Spawn(); g2048Draw();
 }
-
 function g2048Spawn() {
-    const empty = [];
-    for (let r=0; r<4; r++) for (let c=0; c<4; c++) if (!g2048Grid[r][c]) empty.push([r,c]);
-    if (!empty.length) return;
-    const [r,c] = empty[rnd(empty.length)];
-    g2048Grid[r][c] = Math.random() < 0.9 ? 2 : 4;
+    const empty = []; for (let r=0; r<4; r++) for (let c=0; c<4; c++) if (!g2048Grid[r][c]) empty.push([r,c]);
+    if (!empty.length) return; const [r,c] = empty[rnd(empty.length)]; g2048Grid[r][c] = Math.random() < 0.9 ? 2 : 4;
 }
-
 function g2048Draw() {
-    const brd = $('g2048-board');
-    brd.innerHTML = '';
+    const brd = $('g2048-board'); brd.innerHTML = '';
     for (let r=0; r<4; r++) for (let c=0; c<4; c++) {
-        const el = document.createElement('div');
-        const v = g2048Grid[r][c];
+        const el = document.createElement('div'), v = g2048Grid[r][c];
         el.className = 'g2048-cell' + (v ? ` g2048-v${v <= 2048 ? v : 'max'}` : '');
-        if (v) el.textContent = v;
-        brd.appendChild(el);
+        if (v) el.textContent = v; brd.appendChild(el);
     }
 }
-
 function g2048Move(dir) {
-    if (g2048Dead || g2048Won) return;
-    const prevStr = JSON.stringify(g2048Grid);
-
+    if (g2048Dead || g2048Won) return; const prevStr = JSON.stringify(g2048Grid);
     for (let i=0; i<4; i++) {
-        let line;
-        if (dir==='left'||dir==='right') {
-            line = g2048Grid[i].slice();
-        } else {
-            line = [g2048Grid[0][i],g2048Grid[1][i],g2048Grid[2][i],g2048Grid[3][i]];
-        }
+        let line = (dir==='left'||dir==='right') ? g2048Grid[i].slice() : [g2048Grid[0][i],g2048Grid[1][i],g2048Grid[2][i],g2048Grid[3][i]];
         if (dir==='right'||dir==='down') line.reverse();
-
         const nonz = line.filter(v => v);
         for (let j=0; j<nonz.length-1; j++) {
             if (nonz[j]===nonz[j+1]) {
-                nonz[j]*=2; g2048Score+=nonz[j];
-                if (nonz[j]===2048) g2048Won=true;
-                nonz.splice(j+1,1);
+                nonz[j]*=2; g2048Score+=nonz[j]; if (nonz[j]===2048) g2048Won=true; nonz.splice(j+1,1);
             }
         }
         while (nonz.length<4) nonz.push(0);
         if (dir==='right'||dir==='down') nonz.reverse();
-
         if (dir==='left'||dir==='right') g2048Grid[i]=nonz;
         else for (let r=0; r<4; r++) g2048Grid[r][i]=nonz[r];
     }
-
     if (JSON.stringify(g2048Grid)!==prevStr) g2048Spawn();
-
     $('g2048-score').textContent = g2048Score;
-    if (g2048Score > g2048Best) {
-        g2048Best = g2048Score;
-        localStorage.setItem('g2048_best', g2048Best);
-        $('g2048-best').textContent = g2048Best;
-    }
-
+    if (g2048Score > g2048Best) { g2048Best = g2048Score; localStorage.setItem('g2048_best', g2048Best); $('g2048-best').textContent = g2048Best; }
     g2048Draw();
-
-    if (g2048Won) {
-        $('g2048-over-title').textContent = '🎉 2048!';
-        $('g2048-final').textContent = `Score: ${g2048Score}`;
-        $('g2048-over').classList.add('show');
-        return;
-    }
-    if (!g2048CanMove()) {
-        g2048Dead = true;
-        $('g2048-over-title').textContent = '😵 Game Over';
-        $('g2048-final').textContent = `Score: ${g2048Score}`;
-        $('g2048-over').classList.add('show');
-    }
+    if (g2048Won) { $('g2048-over-title').textContent='🎉 2048!'; $('g2048-final').textContent=`Score: ${g2048Score}`; $('g2048-over').classList.add('show'); return; }
+    if (!g2048CanMove()) { g2048Dead=true; $('g2048-over-title').textContent='😵 Game Over'; $('g2048-final').textContent=`Score: ${g2048Score}`; $('g2048-over').classList.add('show'); }
 }
-
 function g2048CanMove() {
     for (let r=0; r<4; r++) for (let c=0; c<4; c++) {
         if (!g2048Grid[r][c]) return true;
         if (c<3 && g2048Grid[r][c]===g2048Grid[r][c+1]) return true;
         if (r<3 && g2048Grid[r][c]===g2048Grid[r+1][c]) return true;
-    }
-    return false;
+    } return false;
 }
-
 let _g2sx=0, _g2sy=0, _g2drag=false;
-
-panel2048.addEventListener('mousedown', e => {
-    _g2sx=e.clientX; _g2sy=e.clientY; _g2drag=true;
-});
-panel2048.addEventListener('mouseup', e => {
-    if (!_g2drag) return; _g2drag=false;
-    const dx=e.clientX-_g2sx, dy=e.clientY-_g2sy;
+panel2048.addEventListener('mousedown', e=>{ _g2sx=e.clientX; _g2sy=e.clientY; _g2drag=true; });
+panel2048.addEventListener('mouseup', e=>{
+    if (!_g2drag) return; _g2drag=false; const dx=e.clientX-_g2sx, dy=e.clientY-_g2sy;
     if (Math.abs(dx)<30&&Math.abs(dy)<30) return;
-    if (Math.abs(dx)>Math.abs(dy)) g2048Move(dx>0?'right':'left');
-    else g2048Move(dy>0?'down':'up');
+    if (Math.abs(dx)>Math.abs(dy)) g2048Move(dx>0?'right':'left'); else g2048Move(dy>0?'down':'up');
 });
-panel2048.addEventListener('mouseleave', () => { _g2drag=false; });
-
-panel2048.addEventListener('touchstart', e => {
-    e.stopPropagation();
-    const t=e.touches[0]; _g2sx=t.clientX; _g2sy=t.clientY;
-},{passive:true});
-panel2048.addEventListener('touchend', e => {
-    e.stopPropagation();
-    const t=e.changedTouches[0];
-    const dx=t.clientX-_g2sx, dy=t.clientY-_g2sy;
+panel2048.addEventListener('mouseleave', ()=>{ _g2drag=false; });
+panel2048.addEventListener('touchstart', e=>{ e.stopPropagation(); const t=e.touches[0]; _g2sx=t.clientX; _g2sy=t.clientY; },{passive:true});
+panel2048.addEventListener('touchend', e=>{
+    e.stopPropagation(); const dx=e.changedTouches[0].clientX-_g2sx, dy=e.changedTouches[0].clientY-_g2sy;
     if (Math.abs(dx)<30&&Math.abs(dy)<30) return;
-    if (Math.abs(dx)>Math.abs(dy)) g2048Move(dx>0?'right':'left');
-    else g2048Move(dy>0?'down':'up');
+    if (Math.abs(dx)>Math.abs(dy)) g2048Move(dx>0?'right':'left'); else g2048Move(dy>0?'down':'up');
 });
-
-$('g2048-again').addEventListener('click',    e=>{e.stopPropagation(); g2048New();});
+$('g2048-again').addEventListener('click', e=>{e.stopPropagation(); g2048New();});
 $('g2048-again').addEventListener('touchend', e=>{e.preventDefault(); e.stopPropagation(); g2048New();});
 
-/* ═══════════════════════════════════════
-   МЕМОРИ — КОНФИГ
-═══════════════════════════════════════ */
+/* --- Мемори Логика --- */
 const MEM_EXT_PATH = (() => {
     const scripts = document.querySelectorAll('script[src]');
-    for (const s of scripts) {
-        if (s.src.includes('GameCollection')) {
-            return s.src.replace(/\/index\.js.*$/, '').replace(location.origin + '/', '');
-        }
-    }
-    return 'scripts/extensions/third-party/GameCollection-main'; // fallback
+    for (const s of scripts) if (s.src.includes('GameCollection')) return s.src.replace(/\/index\.js.*$/, '').replace(location.origin + '/', '');
+    return 'scripts/extensions/third-party/GameCollection-main';
 })();
-
-const MEM_CARDS_ALL = [
-    'death','emperor','empress','justice','sun',
-    'the_devil','the_fool_2v','the_fool','the_hanged_man',
-    'the_hermit','the_high_priestess','the_lovers_2v','the_lovers',
-    'the_moon','the_star','the_tower','the_world','wheel_of_fortune'
-];
-
-// Уровни: { pairs, time(сек), cols }
-// Уровень 1: 2 пары / 2×2 / 40с
-// Уровень 2: 4 пары / 2×4 / 60с
-// Уровень 3: 6 пар  / 3×4 / 90с
-// Уровень 4+: 8 пар / 4×4 / 120с (рандомные 8 из 18 карт)
-const MEM_LEVELS = [
-    { pairs:2,  time:40,  cols:2 },
-    { pairs:4,  time:60,  cols:4 },
-    { pairs:6,  time:90,  cols:4 },
-    { pairs:8,  time:120, cols:4 },
-];
-
-/* ═══════════════════════════════════════
-   МЕМОРИ — СОСТОЯНИЕ
-═══════════════════════════════════════ */
-let memLevel = +localStorage.getItem('mem_level') || 1;
-let memCards = [];
-let memFlipped = [];
-let memMatches = 0;
-let memTimer = null;
-let memTimeLeft = 0;
-let memLocked = false;
-let memGameActive = false;
-let memBest = JSON.parse(localStorage.getItem('mem_best') || '{}');
-
-function memShuffle(arr) {
-    const a = [...arr];
-    for (let i = a.length-1; i > 0; i--) {
-        const j = Math.floor(Math.random()*(i+1));
-        [a[i],a[j]] = [a[j],a[i]];
-    }
-    return a;
-}
-
-function memGetCfg() {
-    return MEM_LEVELS[Math.min(memLevel-1, MEM_LEVELS.length-1)];
-}
-
-function memPickCards(pairs) {
-    // Для уровней выше 3 (12 пар) всегда берём рандомные 12 из 18
-    return memShuffle([...MEM_CARDS_ALL]).slice(0, pairs);
-}
-
+const MEM_CARDS_ALL = ['death','emperor','empress','justice','sun','the_devil','the_fool_2v','the_fool','the_hanged_man','the_hermit','the_high_priestess','the_lovers_2v','the_lovers','the_moon','the_star','the_tower','the_world','wheel_of_fortune'];
+const MEM_LEVELS = [{ pairs:2, time:40, cols:2 }, { pairs:4, time:60, cols:4 }, { pairs:6, time:90, cols:4 }, { pairs:8, time:120, cols:4 }];
+let memLevel = +localStorage.getItem('mem_level') || 1, memCards = [], memFlipped = [], memMatches = 0, memTimer = null, memTimeLeft = 0, memLocked = false, memGameActive = false, memBest = JSON.parse(localStorage.getItem('mem_best') || '{}');
+function memShuffle(arr) { const a=[...arr]; for (let i=a.length-1; i>0; i--) { const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function memGetCfg() { return MEM_LEVELS[Math.min(memLevel-1, MEM_LEVELS.length-1)]; }
+function memPickCards(pairs) { return memShuffle([...MEM_CARDS_ALL]).slice(0, pairs); }
 function memNewGame() {
-    clearInterval(memTimer);
-    memFlipped = []; memMatches = 0; memLocked = false; memGameActive = true;
-
-    const cfg = memGetCfg();
-    memTimeLeft = cfg.time;
-
-    // Выбираем карты и дублируем для пар
+    clearInterval(memTimer); memFlipped = []; memMatches = 0; memLocked = false; memGameActive = true;
+    const cfg = memGetCfg(); memTimeLeft = cfg.time;
     const picked = memPickCards(cfg.pairs);
-    const doubled = memShuffle(
-        [...picked, ...picked].map((img, i) => ({ id:i, img, revealed:false, matched:false, el:null }))
-    );
-    memCards = doubled;
-
-    $('mem-level-num').textContent = memLevel;
-    $('mem-pairs').textContent = `${cfg.pairs} пар · ${cfg.time}с`;
-    $('mem-timer').textContent = cfg.time;
-    $('mem-timer').style.color = '';
-    $('mem-over').classList.remove('show');
-    memUpdateBest();
-    memRenderBoard(cfg.cols);
-    memStartTimer();
+    memCards = memShuffle([...picked, ...picked].map((img, i) => ({ id:i, img, revealed:false, matched:false, el:null })));
+    $('mem-level-num').textContent = memLevel; $('mem-pairs').textContent = `${cfg.pairs} пар · ${cfg.time}с`;
+    $('mem-timer').textContent = cfg.time; $('mem-timer').style.color = ''; $('mem-over').classList.remove('show');
+    memUpdateBest(); memRenderBoard(cfg.cols); memStartTimer();
 }
-
 function memStartTimer() {
     clearInterval(memTimer);
     memTimer = setInterval(() => {
         memTimeLeft--;
-        const timerEl = $('mem-timer');
-        if (timerEl) {
-            timerEl.textContent = memTimeLeft;
-            timerEl.style.color = memTimeLeft <= 10 ? '#e94560' : '';
-        }
-        if (memTimeLeft <= 0) {
-            clearInterval(memTimer);
-            memGameOver(false);
-        }
+        const timerEl = $('mem-timer'); if (timerEl) { timerEl.textContent = memTimeLeft; timerEl.style.color = memTimeLeft <= 10 ? '#e94560' : ''; }
+        if (memTimeLeft <= 0) { clearInterval(memTimer); memGameOver(false); }
     }, 1000);
 }
-
 function memRenderBoard(cols) {
-    const board = $('mem-board');
-    board.innerHTML = '';
-    board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-
+    const board = $('mem-board'); board.innerHTML = ''; board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     memCards.forEach((card, idx) => {
-        const el = document.createElement('div');
-        el.className = 'mem-card';
-
-        const inner = document.createElement('div');
-        inner.className = 'mem-card-inner';
-
-        const back = document.createElement('div');
-        back.className = 'mem-card-back';
-        const backImg = document.createElement('img');
-        backImg.src = `${MEM_EXT_PATH}/images/back.png`;
-        backImg.draggable = false;
-        back.appendChild(backImg);
-
-        const front = document.createElement('div');
-        front.className = 'mem-card-front';
-        const frontImg = document.createElement('img');
-        frontImg.src = `${MEM_EXT_PATH}/images/${card.img}.jpg`;
-        frontImg.draggable = false;
-        front.appendChild(frontImg);
-
-        inner.appendChild(back);
-        inner.appendChild(front);
-        el.appendChild(inner);
-
+        const el = document.createElement('div'); el.className = 'mem-card';
+        el.innerHTML = `<div class="mem-card-inner"><div class="mem-card-back"><img src="${MEM_EXT_PATH}/images/back.png" draggable="false"></div><div class="mem-card-front"><img src="${MEM_EXT_PATH}/images/${card.img}.jpg" draggable="false"></div></div>`;
         el.addEventListener('click', e => { e.stopPropagation(); memFlip(idx); });
         el.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); memFlip(idx); });
-
-        board.appendChild(el);
-        memCards[idx].el = el;
+        board.appendChild(el); memCards[idx].el = el;
     });
 }
-
 function memFlip(idx) {
-    const card = memCards[idx];
-    if (!memGameActive || memLocked || card.revealed || card.matched) return;
-
-    card.revealed = true;
-    card.el.classList.add('flipped');
-    memFlipped.push(idx);
-
+    const card = memCards[idx]; if (!memGameActive || memLocked || card.revealed || card.matched) return;
+    card.revealed = true; card.el.classList.add('flipped'); memFlipped.push(idx);
     if (memFlipped.length === 2) {
-        memLocked = true;
-        const [a, b] = memFlipped;
-
+        memLocked = true; const [a, b] = memFlipped;
         if (memCards[a].img === memCards[b].img) {
-            // Совпадение!
             setTimeout(() => {
-                memCards[a].el.classList.add('matched');
-                memCards[b].el.classList.add('matched');
-                memCards[a].matched = true;
-                memCards[b].matched = true;
-                memFlipped = [];
-                memLocked = false;
-                memMatches++;
-
-                const cfg = memGetCfg();
-                if (memMatches === cfg.pairs) {
-                    memGameOver(true);
-                }
+                memCards[a].el.classList.add('matched'); memCards[b].el.classList.add('matched');
+                memCards[a].matched = true; memCards[b].matched = true;
+                memFlipped = []; memLocked = false; memMatches++;
+                if (memMatches === memGetCfg().pairs) memGameOver(true);
             }, 350);
         } else {
-            // Не совпало — переворачиваем обратно
             setTimeout(() => {
-                memCards[a].revealed = false;
-                memCards[b].revealed = false;
-                memCards[a].el.classList.remove('flipped');
-                memCards[b].el.classList.remove('flipped');
-                memFlipped = [];
-                memLocked = false;
+                memCards[a].revealed = false; memCards[b].revealed = false;
+                memCards[a].el.classList.remove('flipped'); memCards[b].el.classList.remove('flipped');
+                memFlipped = []; memLocked = false;
             }, 900);
         }
     }
 }
-
 function memGameOver(won) {
-    clearInterval(memTimer);
-    memGameActive = false;
-
+    clearInterval(memTimer); memGameActive = false;
     if (won) {
-        const cfg = memGetCfg();
-        const timeTaken = cfg.time - memTimeLeft;
-        const key = `lv${memLevel}`;
-        if (!memBest[key] || timeTaken < memBest[key]) {
-            memBest[key] = timeTaken;
-            localStorage.setItem('mem_best', JSON.stringify(memBest));
-        }
-        // Запоминаем достигнутый уровень
-        const nextLv = memLevel + 1;
-        localStorage.setItem('mem_level', nextLv);
+        const cfg = memGetCfg(), timeTaken = cfg.time - memTimeLeft, key = `lv${memLevel}`;
+        if (!memBest[key] || timeTaken < memBest[key]) { memBest[key] = timeTaken; localStorage.setItem('mem_best', JSON.stringify(memBest)); }
+        localStorage.setItem('mem_level', memLevel + 1);
     }
-
     $('mem-over-title').textContent = won ? '🎉 Отлично!' : '⏰ Время вышло!';
-    const cfg = memGetCfg();
-    $('mem-over-result').textContent = won
-        ? `Уровень ${memLevel} пройден за ${cfg.time - memTimeLeft}с`
-        : `Найдено ${memMatches} из ${cfg.pairs} пар`;
-    $('mem-over-next').style.display = won ? 'inline-block' : 'none';
-    $('mem-over').classList.add('show');
-
+    $('mem-over-result').textContent = won ? `Уровень ${memLevel} пройден за ${memGetCfg().time - memTimeLeft}с` : `Найдено ${memMatches} из ${memGetCfg().pairs} пар`;
+    $('mem-over-next').style.display = won ? 'inline-block' : 'none'; $('mem-over').classList.add('show');
     if (won) memLevel++;
 }
-
-function memUpdateBest() {
-    const key = `lv${memLevel}`;
-    const b = memBest[key];
-    const el = $('mem-best');
-    if (el) el.textContent = b ? `Рекорд: ${b}с` : '';
-}
-
-/* Кнопки мемори */
-$('mem-over-next').addEventListener('click', e => {
-    e.stopPropagation(); memNewGame();
-});
-$('mem-over-next').addEventListener('touchend', e => {
-    e.preventDefault(); e.stopPropagation(); memNewGame();
-});
-$('mem-over-retry').addEventListener('click', e => {
-    e.stopPropagation();
-    if (!$('mem-over-next').style.display || $('mem-over-next').style.display === 'none') {
-        // проиграл — просто перезапуск
-    } else {
-        // выиграл но хочет повторить уровень
-        memLevel = Math.max(1, memLevel - 1);
-        localStorage.setItem('mem_level', memLevel);
-    }
-    memNewGame();
-});
-$('mem-over-retry').addEventListener('touchend', e => {
-    e.preventDefault(); e.stopPropagation();
-    if ($('mem-over-next').style.display === 'none') {
-    } else {
-        memLevel = Math.max(1, memLevel - 1);
-        localStorage.setItem('mem_level', memLevel);
-    }
-    memNewGame();
-});
-$('mem-restart-btn').addEventListener('click', e => {
-    e.stopPropagation(); memNewGame();
-});
-$('mem-restart-btn').addEventListener('touchend', e => {
-    e.preventDefault(); e.stopPropagation(); memNewGame();
+function memUpdateBest() { const b = memBest[`lv${memLevel}`]; $('mem-best').textContent = b ? `Рекорд: ${b}с` : ''; }
+['click','touchend'].forEach(evt => {
+    $('mem-over-next').addEventListener(evt, e=>{ if(evt==='touchend')e.preventDefault(); e.stopPropagation(); memNewGame(); });
+    $('mem-over-retry').addEventListener(evt, e=>{
+        if(evt==='touchend')e.preventDefault(); e.stopPropagation();
+        if($('mem-over-next').style.display !== 'none') { memLevel=Math.max(1,memLevel-1); localStorage.setItem('mem_level',memLevel); }
+        memNewGame();
+    });
+    $('mem-restart-btn').addEventListener(evt, e=>{ if(evt==='touchend')e.preventDefault(); e.stopPropagation(); memNewGame(); });
+    $('mem-reset-btn').addEventListener(evt, e=>{ if(evt==='touchend')e.preventDefault(); e.stopPropagation(); memLevel=1; localStorage.setItem('mem_level',1); memNewGame(); });
 });
 
-function memResetToLevel1() {
-    memLevel = 1;
-    localStorage.setItem('mem_level', 1);
-    memNewGame();
-}
-$('mem-reset-btn').addEventListener('click', e => {
-    e.stopPropagation(); memResetToLevel1();
-});
-$('mem-reset-btn').addEventListener('touchend', e => {
-    e.preventDefault(); e.stopPropagation(); memResetToLevel1();
-});
-
-
-/* ═══════════════════════════════════════
-   FLAPPY BIRD
-═══════════════════════════════════════ */
-flappyPanel = document.createElement('div');
-flappyPanel.className = 'bb-panel fb-panel';
-flappyPanel.innerHTML = `
-  <div class="bb-header">
-    <span class="bb-title">🐦 Flappy Bird</span>
-    <div class="bb-score-box">
-      <div class="bb-score-label">Score</div>
-      <div class="bb-score" id="fb-score">0</div>
-      <div class="bb-best">Best <span id="fb-best">0</span></div>
-    </div>
-  </div>
-  <div class="fb-wrap">
-    <canvas id="fb-canvas" width="288" height="320" class="fb-canvas"></canvas>
-  </div>
-  <div class="fb-help" id="fb-help">Click / Space to start</div>
-`;
-document.body.appendChild(flappyPanel);
-flappyPanel.addEventListener('click', e => e.stopPropagation());
-flappyPanel.addEventListener('touchend', e => e.stopPropagation());
-
-/* — game constants — */
-const FB_W=288, FB_H=320, FB_GROUND_H=32;
-const FB_BIRD_X=60, FB_BIRD_R=11;
-const FB_PIPE_W=44, FB_GAP=115, FB_SPEED=1.4;
-const FB_GRAVITY=0.25, FB_FLAP=-5.5;
-
-/* — game state — */
-let fbState=0; // 0=HOME 1=PLAY 2=DEAD
-let fbScore=0, fbBest=parseInt(localStorage.getItem('fb_best')||'0');
-let fbBirdY=FB_H/2, fbBirdVY=0, fbFrame=0;
-let fbPipes=[], fbGroundX=0;
-let fbRAF=null, fbLastT=0;
-
+/* --- Flappy Bird Логика --- */
+const FB_W=288, FB_H=320, FB_GROUND_H=32, FB_BIRD_X=60, FB_BIRD_R=11, FB_PIPE_W=44, FB_GAP=115, FB_SPEED=1.4, FB_GRAVITY=0.25, FB_FLAP=-5.5;
+let fbState=0, fbScore=0, fbBest=parseInt(localStorage.getItem('fb_best')||'0'), fbBirdY=FB_H/2, fbBirdVY=0, fbFrame=0, fbPipes=[], fbGroundX=0, fbRAF=null, fbLastT=0;
 $('fb-best').textContent=fbBest;
-
-function fbRandGap(){
-    return FB_GROUND_H+40+Math.random()*(FB_H-FB_GROUND_H-FB_GAP-80);
-}
-function fbStopLoop(){
-    if(fbRAF){ cancelAnimationFrame(fbRAF); fbRAF=null; }
-}
+function fbRandGap(){ return FB_GROUND_H+40+Math.random()*(FB_H-FB_GROUND_H-FB_GAP-80); }
+function fbStopLoop(){ if(fbRAF){ cancelAnimationFrame(fbRAF); fbRAF=null; } }
 function fbInit(){
     fbState=0; fbScore=0; fbBirdY=FB_H/2; fbBirdVY=0; fbFrame=0; fbGroundX=0;
-    fbPipes=[
-        {x:FB_W+60,  gapY:fbRandGap(), scored:false},
-        {x:FB_W+220, gapY:fbRandGap(), scored:false}
-    ];
-    $('fb-score').textContent=0;
-    $('fb-help').textContent='Click / Space to start';
-    fbStopLoop();
-    fbRAF=requestAnimationFrame(fbLoop);
+    fbPipes=[ {x:FB_W+60, gapY:fbRandGap(), scored:false}, {x:FB_W+220, gapY:fbRandGap(), scored:false} ];
+    $('fb-score').textContent=0; $('fb-help').textContent='Click / Space to start'; fbStopLoop(); fbRAF=requestAnimationFrame(fbLoop);
 }
 function fbFlap(){
-    if(fbState===0){ fbState=1; $('fb-help').textContent=''; }
-    else if(fbState===1){ fbBirdVY=FB_FLAP; }
-    else if(fbState===2){ fbInit(); }
+    if(fbState===0){ fbState=1; $('fb-help').textContent=''; } else if(fbState===1){ fbBirdVY=FB_FLAP; } else if(fbState===2){ fbInit(); }
 }
-function fbLoop(ts){
-    fbRAF=requestAnimationFrame(fbLoop);
-    if(ts-fbLastT<25){ return; }
-    fbLastT=ts;
-    fbUpdate();
-    fbDraw();
-}
+function fbLoop(ts){ fbRAF=requestAnimationFrame(fbLoop); if(ts-fbLastT<25){ return; } fbLastT=ts; fbUpdate(); fbDraw(); }
 function fbUpdate(){
     if(fbState!==1) return;
-    fbBirdVY+=FB_GRAVITY;
-    fbBirdY+=fbBirdVY;
-    fbGroundX=(fbGroundX-FB_SPEED);
-    if(fbGroundX<-20) fbGroundX=0;
+    fbBirdVY+=FB_GRAVITY; fbBirdY+=fbBirdVY; fbGroundX=(fbGroundX-FB_SPEED); if(fbGroundX<-20) fbGroundX=0;
     for(const p of fbPipes){
-        p.x-=FB_SPEED;
-        if(p.x+FB_PIPE_W<0){ p.x+=FB_W+FB_PIPE_W+20; p.gapY=fbRandGap(); p.scored=false; }
+        p.x-=FB_SPEED; if(p.x+FB_PIPE_W<0){ p.x+=FB_W+FB_PIPE_W+20; p.gapY=fbRandGap(); p.scored=false; }
         if(!p.scored && p.x+FB_PIPE_W < FB_BIRD_X-FB_BIRD_R){
-            p.scored=true; fbScore++;
-            $('fb-score').textContent=fbScore;
+            p.scored=true; fbScore++; $('fb-score').textContent=fbScore;
             if(fbScore>fbBest){ fbBest=fbScore; localStorage.setItem('fb_best',fbBest); $('fb-best').textContent=fbBest; }
         }
     }
-    // ground / ceiling collision
     if(fbBirdY+FB_BIRD_R>=FB_H-FB_GROUND_H || fbBirdY-FB_BIRD_R<=0){ fbDie(); return; }
-    // pipe collision
     for(const p of fbPipes){
-        if(FB_BIRD_X+FB_BIRD_R>p.x+4 && FB_BIRD_X-FB_BIRD_R<p.x+FB_PIPE_W-4){
-            if(fbBirdY-FB_BIRD_R<p.gapY || fbBirdY+FB_BIRD_R>p.gapY+FB_GAP){ fbDie(); return; }
-        }
+        if(FB_BIRD_X+FB_BIRD_R>p.x+4 && FB_BIRD_X-FB_BIRD_R<p.x+FB_PIPE_W-4){ if(fbBirdY-FB_BIRD_R<p.gapY || fbBirdY+FB_BIRD_R>p.gapY+FB_GAP){ fbDie(); return; } }
     }
 }
-function fbDie(){
-    fbState=2;
-    $('fb-help').textContent='Game Over! Click to restart';
-}
+function fbDie(){ fbState=2; $('fb-help').textContent='Game Over! Click to restart'; }
 function fbDraw(){
-    const cv=$('fb-canvas'); if(!cv) return;
-    const cx=cv.getContext('2d');
-    // sky
-    const sky=cx.createLinearGradient(0,0,0,FB_H-FB_GROUND_H);
-    sky.addColorStop(0,'#4ec0ff'); sky.addColorStop(1,'#b3e5fc');
+    const cv=$('fb-canvas'); if(!cv) return; const cx=cv.getContext('2d');
+    const sky=cx.createLinearGradient(0,0,0,FB_H-FB_GROUND_H); sky.addColorStop(0,'#4ec0ff'); sky.addColorStop(1,'#b3e5fc');
     cx.fillStyle=sky; cx.fillRect(0,0,FB_W,FB_H-FB_GROUND_H);
-    // clouds (static decoration)
     cx.fillStyle='rgba(255,255,255,0.55)';
     for(const [cx2,cy2,r] of [[60,45,14],[130,30,10],[220,55,16],[30,70,8]]){
-        cx.beginPath(); cx.arc(cx2,cy2,r,0,Math.PI*2); cx.fill();
-        cx.beginPath(); cx.arc(cx2+r*0.7,cy2,r*0.7,0,Math.PI*2); cx.fill();
-        cx.beginPath(); cx.arc(cx2-r*0.7,cy2,r*0.7,0,Math.PI*2); cx.fill();
+        cx.beginPath(); cx.arc(cx2,cy2,r,0,Math.PI*2); cx.fill(); cx.beginPath(); cx.arc(cx2+r*0.7,cy2,r*0.7,0,Math.PI*2); cx.fill(); cx.beginPath(); cx.arc(cx2-r*0.7,cy2,r*0.7,0,Math.PI*2); cx.fill();
     }
-    // pipes
     for(const p of fbPipes){
-        // top pipe body
-        cx.fillStyle='#5cb85c'; cx.fillRect(p.x,0,FB_PIPE_W,p.gapY);
-        // top pipe cap
-        cx.fillStyle='#4cae4c'; cx.fillRect(p.x-4,p.gapY-20,FB_PIPE_W+8,20);
-        cx.fillStyle='#3d8b3d'; cx.fillRect(p.x-4,p.gapY-22,FB_PIPE_W+8,4);
-        // bottom pipe body
-        cx.fillStyle='#5cb85c'; cx.fillRect(p.x,p.gapY+FB_GAP,FB_PIPE_W,FB_H);
-        // bottom pipe cap
-        cx.fillStyle='#4cae4c'; cx.fillRect(p.x-4,p.gapY+FB_GAP,FB_PIPE_W+8,20);
-        cx.fillStyle='#3d8b3d'; cx.fillRect(p.x-4,p.gapY+FB_GAP+18,FB_PIPE_W+8,4);
-        // pipe sheen
-        cx.fillStyle='rgba(255,255,255,0.15)';
-        cx.fillRect(p.x+4,0,8,p.gapY);
-        cx.fillRect(p.x+4,p.gapY+FB_GAP,8,FB_H);
+        cx.fillStyle='#5cb85c'; cx.fillRect(p.x,0,FB_PIPE_W,p.gapY); cx.fillStyle='#4cae4c'; cx.fillRect(p.x-4,p.gapY-20,FB_PIPE_W+8,20); cx.fillStyle='#3d8b3d'; cx.fillRect(p.x-4,p.gapY-22,FB_PIPE_W+8,4);
+        cx.fillStyle='#5cb85c'; cx.fillRect(p.x,p.gapY+FB_GAP,FB_PIPE_W,FB_H); cx.fillStyle='#4cae4c'; cx.fillRect(p.x-4,p.gapY+FB_GAP,FB_PIPE_W+8,20); cx.fillStyle='#3d8b3d'; cx.fillRect(p.x-4,p.gapY+FB_GAP+18,FB_PIPE_W+8,4);
+        cx.fillStyle='rgba(255,255,255,0.15)'; cx.fillRect(p.x+4,0,8,p.gapY); cx.fillRect(p.x+4,p.gapY+FB_GAP,8,FB_H);
     }
-    // ground
-    cx.fillStyle='#c8a84b'; cx.fillRect(0,FB_H-FB_GROUND_H,FB_W,FB_GROUND_H);
-    cx.fillStyle='#5a9e3a'; cx.fillRect(0,FB_H-FB_GROUND_H,FB_W,8);
-    // ground stripe
-    cx.fillStyle='rgba(0,0,0,0.07)';
-    for(let gx=fbGroundX; gx<FB_W; gx+=20){ cx.fillRect(gx,FB_H-FB_GROUND_H,10,8); }
-    // bird
-    const tilt=Math.min(Math.max(fbBirdVY*3,-30),70);
-    cx.save();
-    cx.translate(FB_BIRD_X,fbBirdY);
-    cx.rotate(tilt*Math.PI/180);
-    // body
+    cx.fillStyle='#c8a84b'; cx.fillRect(0,FB_H-FB_GROUND_H,FB_W,FB_GROUND_H); cx.fillStyle='#5a9e3a'; cx.fillRect(0,FB_H-FB_GROUND_H,FB_W,8);
+    cx.fillStyle='rgba(0,0,0,0.07)'; for(let gx=fbGroundX; gx<FB_W; gx+=20){ cx.fillRect(gx,FB_H-FB_GROUND_H,10,8); }
+    const tilt=Math.min(Math.max(fbBirdVY*3,-30),70); cx.save(); cx.translate(FB_BIRD_X,fbBirdY); cx.rotate(tilt*Math.PI/180);
     cx.fillStyle='#f5c518'; cx.beginPath(); cx.ellipse(0,0,FB_BIRD_R,FB_BIRD_R-2,0,0,Math.PI*2); cx.fill();
-    // wing
-    const wOff=Math.sin(fbFrame*0.25)*4;
-    cx.fillStyle='#e6a800';
-    cx.beginPath(); cx.ellipse(-3,wOff,7,4,0.3,0,Math.PI*2); cx.fill();
-    // eye white
-    cx.fillStyle='#fff'; cx.beginPath(); cx.arc(5,-3,4,0,Math.PI*2); cx.fill();
-    cx.fillStyle='#222'; cx.beginPath(); cx.arc(6,-3,2,0,Math.PI*2); cx.fill();
-    cx.fillStyle='#fff'; cx.beginPath(); cx.arc(7,-4,0.8,0,Math.PI*2); cx.fill();
-    // beak
-    cx.fillStyle='#e94560';
-    cx.beginPath(); cx.moveTo(FB_BIRD_R,0); cx.lineTo(FB_BIRD_R+8,-3); cx.lineTo(FB_BIRD_R+8,3); cx.closePath(); cx.fill();
-    cx.restore();
+    const wOff=Math.sin(fbFrame*0.25)*4; cx.fillStyle='#e6a800'; cx.beginPath(); cx.ellipse(-3,wOff,7,4,0.3,0,Math.PI*2); cx.fill();
+    cx.fillStyle='#fff'; cx.beginPath(); cx.arc(5,-3,4,0,Math.PI*2); cx.fill(); cx.fillStyle='#222'; cx.beginPath(); cx.arc(6,-3,2,0,Math.PI*2); cx.fill(); cx.fillStyle='#fff'; cx.beginPath(); cx.arc(7,-4,0.8,0,Math.PI*2); cx.fill();
+    cx.fillStyle='#e94560'; cx.beginPath(); cx.moveTo(FB_BIRD_R,0); cx.lineTo(FB_BIRD_R+8,-3); cx.lineTo(FB_BIRD_R+8,3); cx.closePath(); cx.fill(); cx.restore();
     if(fbState===1) fbFrame++;
-    // HOME overlay
     if(fbState===0){
-        cx.fillStyle='rgba(0,0,0,0.32)'; cx.fillRect(0,0,FB_W,FB_H-FB_GROUND_H);
-        cx.textAlign='center';
-        cx.fillStyle='#fff'; cx.font='bold 22px "Segoe UI",sans-serif';
-        cx.fillText('Flappy Bird',FB_W/2,FB_H/2-18);
-        cx.fillStyle='#ffe082'; cx.font='12px "Segoe UI",sans-serif';
-        cx.fillText('Click / Space to flap!',FB_W/2,FB_H/2+10);
+        cx.fillStyle='rgba(0,0,0,0.32)'; cx.fillRect(0,0,FB_W,FB_H-FB_GROUND_H); cx.textAlign='center'; cx.fillStyle='#fff'; cx.font='bold 22px "Segoe UI",sans-serif';
+        cx.fillText('Flappy Bird',FB_W/2,FB_H/2-18); cx.fillStyle='#ffe082'; cx.font='12px "Segoe UI",sans-serif'; cx.fillText('Click / Space to flap!',FB_W/2,FB_H/2+10);
     }
-    // DEAD overlay
     if(fbState===2){
-        cx.fillStyle='rgba(0,0,0,0.45)'; cx.fillRect(0,0,FB_W,FB_H-FB_GROUND_H);
-        cx.textAlign='center';
-        cx.fillStyle='#e94560'; cx.font='bold 24px "Segoe UI",sans-serif';
-        cx.fillText('Game Over!',FB_W/2,FB_H/2-28);
-        cx.fillStyle='#fff'; cx.font='14px "Segoe UI",sans-serif';
-        cx.fillText('Score: '+fbScore+'   Best: '+fbBest,FB_W/2,FB_H/2+4);
-        cx.fillStyle='#f5a623'; cx.font='12px "Segoe UI",sans-serif';
-        cx.fillText('Click to restart',FB_W/2,FB_H/2+26);
+        cx.fillStyle='rgba(0,0,0,0.45)'; cx.fillRect(0,0,FB_W,FB_H-FB_GROUND_H); cx.textAlign='center'; cx.fillStyle='#e94560'; cx.font='bold 24px "Segoe UI",sans-serif';
+        cx.fillText('Game Over!',FB_W/2,FB_H/2-28); cx.fillStyle='#fff'; cx.font='14px "Segoe UI",sans-serif'; cx.fillText('Score: '+fbScore+'   Best: '+fbBest,FB_W/2,FB_H/2+4);
+        cx.fillStyle='#f5a623'; cx.font='12px "Segoe UI",sans-serif'; cx.fillText('Click to restart',FB_W/2,FB_H/2+26);
     }
 }
-// Flappy Bird controls
 $('fb-canvas').addEventListener('click',  e=>{ e.stopPropagation(); fbFlap(); });
 $('fb-canvas').addEventListener('touchend', e=>{ e.preventDefault(); e.stopPropagation(); fbFlap(); });
-document.addEventListener('keydown', e=>{
-    if((e.code==='Space'||e.key===' ')&&flappyPanelOpen){ e.preventDefault(); fbFlap(); }
-});
 
+
+/* --- Судоку Логика --- */
+const SU_CLUES = { easy: 38, medium: 30, hard: 24 };
+let suDiff = localStorage.getItem('su_diff') || 'easy', suSolution = null, suPuzzle = null, suState = null, suGiven = null, suSelected = null, suErrors = 0, suTimer = 0, suTimerInt = null, suGameOver = false;
+function suShuffle(arr) { const a = [...arr]; for (let i=a.length-1; i>0; i--) { const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function suValid(board, r, c, n) {
+    for (let i = 0; i < 9; i++) {
+        if (board[r][i] === n || board[i][c] === n) return false;
+        if (board[3*Math.floor(r/3) + Math.floor(i/3)][3*Math.floor(c/3) + i%3] === n) return false;
+    } return true;
+}
+function suFill(board, rand) {
+    for (let r=0; r<9; r++) for (let c=0; c<9; c++) if (!board[r][c]) {
+        for (const n of rand ? suShuffle([1,2,3,4,5,6,7,8,9]) : [1,2,3,4,5,6,7,8,9]) {
+            if (suValid(board, r, c, n)) { board[r][c] = n; if (suFill(board, rand)) return true; board[r][c] = 0; }
+        } return false;
+    } return true;
+}
+function suGenPuzzle(clues) {
+    const sol = Array.from({length:9}, () => Array(9).fill(0)); suFill(sol, true);
+    const puzzle = sol.map(r => [...r]); const cells = suShuffle([...Array(81).keys()]); let removed = 0;
+    for (const idx of cells) { if (removed >= 81 - clues) break; puzzle[Math.floor(idx/9)][idx%9] = 0; removed++; }
+    return { sol, puzzle };
+}
+function suRenderGrid() {
+    const grid = $('su-grid'); if (!grid) return; grid.innerHTML = '';
+    const sr = suSelected?.r, sc = suSelected?.c, sv = (sr != null) ? suState[sr][sc] : 0;
+    for (let r=0; r<9; r++) for (let c=0; c<9; c++) {
+        const cell = document.createElement('div'); let cls = 'su-cell';
+        if (c % 3 === 0 && c > 0) cls += ' su-bl'; if (r % 3 === 0 && r > 0) cls += ' su-bt';
+        if (suGiven[r][c]) { cls += ' su-given'; cell.textContent = suPuzzle[r][c]; }
+        else if (suState[r][c]) { cell.textContent = suState[r][c]; if (suState[r][c] !== suSolution[r][c]) cls += ' su-wrong'; }
+        if (sr != null) {
+            if (r === sr && c === sc) cls += ' su-selected';
+            else if (r === sr || c === sc || (Math.floor(r/3) === Math.floor(sr/3) && Math.floor(c/3) === Math.floor(sc/3))) cls += ' su-highlight';
+            if (sv && suState[r][c] === sv && !(r === sr && c === sc)) cls += ' su-same-num';
+        }
+        cell.className = cls; cell.dataset.r = r; cell.dataset.c = c;
+        if (!suGiven[r][c]) {
+            cell.addEventListener('click', e=>{ e.stopPropagation(); suSelected = { r, c }; suRenderGrid(); });
+            cell.addEventListener('touchend', e=>{ e.preventDefault(); e.stopPropagation(); suSelected = { r, c }; suRenderGrid(); });
+        }
+        grid.appendChild(cell);
+    }
+}
+function suBuildNumpad() {
+    const pad = $('su-numpad'); if (!pad) return; pad.innerHTML = '';
+    for (let n=1; n<=9; n++) {
+        const btn = document.createElement('button'); btn.className = 'su-num-btn'; btn.textContent = n;
+        btn.addEventListener('click', e=>{ e.stopPropagation(); suInput(n); }); btn.addEventListener('touchend', e=>{ e.preventDefault(); e.stopPropagation(); suInput(n); });
+        pad.appendChild(btn);
+    }
+    const eb = document.createElement('button'); eb.className = 'su-num-btn su-erase'; eb.textContent = '✕';
+    eb.addEventListener('click', e=>{ e.stopPropagation(); suInput(0); }); eb.addEventListener('touchend', e=>{ e.preventDefault(); e.stopPropagation(); suInput(0); });
+    pad.appendChild(eb);
+}
+function suNewGame() {
+    clearInterval(suTimerInt); suErrors = 0; suTimer = 0; suSelected = null; suGameOver = false;
+    if ($('su-errors')) $('su-errors').textContent = '0'; if ($('su-timer')) $('su-timer').textContent = '0:00'; $('su-over')?.classList.remove('show');
+    const { sol, puzzle } = suGenPuzzle(SU_CLUES[suDiff]); suSolution = sol; suPuzzle = puzzle; suState = puzzle.map(r => [...r]); suGiven = puzzle.map(r => r.map(v => v !== 0));
+    suRenderGrid(); suBuildNumpad();
+    sudokuPanel.querySelectorAll('.su-diff').forEach(b => b.classList.toggle('active', b.dataset.d === suDiff));
+    suTimerInt = setInterval(() => {
+        if (suGameOver) return; suTimer++;
+        if ($('su-timer')) $('su-timer').textContent = `${Math.floor(suTimer/60)}:${(suTimer%60).toString().padStart(2,'0')}`;
+    }, 1000);
+}
+function suInput(n) {
+    if (!suSelected || suGameOver) return; const { r, c } = suSelected; if (suGiven[r][c]) return;
+    if (n === 0) { suState[r][c] = 0; suRenderGrid(); return; } if (suState[r][c] === n) return; suState[r][c] = n;
+    if (n !== suSolution[r][c]) {
+        suErrors++; if ($('su-errors')) $('su-errors').textContent = suErrors;
+        if (suErrors >= 3) { suGameOver = true; clearInterval(suTimerInt); $('su-over-title').textContent = '💀 Проигрыш!'; $('su-over-result').textContent = 'Слишком много ошибок'; suRenderGrid(); setTimeout(() => $('su-over')?.classList.add('show'), 400); return; }
+    }
+    suRenderGrid(); suCheckWin();
+}
+function suCheckWin() {
+    for (let r=0; r<9; r++) for (let c=0; c<9; c++) if (suState[r][c] !== suSolution[r][c]) return;
+    suGameOver = true; clearInterval(suTimerInt);
+    const bKey = `su_best_${suDiff}`, prev = +localStorage.getItem(bKey) || 0; if (!prev || suTimer < prev) localStorage.setItem(bKey, suTimer);
+    const best = +localStorage.getItem(bKey);
+    $('su-over-title').textContent = '🎉 Победа!'; $('su-over-result').textContent = `Время: ${Math.floor(suTimer/60)}:${(suTimer%60).toString().padStart(2,'0')} · Рекорд: ${Math.floor(best/60)}:${(best%60).toString().padStart(2,'0')}`;
+    setTimeout(() => $('su-over')?.classList.add('show'), 300);
+}
+$('su-again').addEventListener('click', e=>{ e.stopPropagation(); suNewGame(); });
+$('su-again').addEventListener('touchend', e=>{ e.preventDefault(); e.stopPropagation(); suNewGame(); });
+sudokuPanel.querySelectorAll('.su-diff').forEach(b => {
+    b.addEventListener('click', e => { e.stopPropagation(); suDiff = b.dataset.d; localStorage.setItem('su_diff', suDiff); suNewGame(); });
+});
 /* ═══════════════════════════════════════
-   ИНИЦИАЛИЗАЦИЯ
+   ЕДИНЫЙ ОБРАБОТЧИК КЛАВИШ
+   — блокирует стрелки от SillyTavern пока открыта любая игра
 ═══════════════════════════════════════ */
-newGame();
-msNewGame();
-g2048New();
-memNewGame();
-console.log('🎮 [Games] v5.0 — Block Blast + Сапёр + 2048 + Мемори + Flappy Bird готово');
+document.addEventListener('keydown', e => {
+    const anyOpen = panelOpen || msPanelOpen || panel2048Open || memPanelOpen ||
+                    mjPanelOpen || flappyPanelOpen || sudokuPanelOpen;
+    if (!anyOpen) return;
+
+    const isArrow = e.key === 'ArrowUp' || e.key === 'ArrowDown' ||
+                    e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+    const isSpace = e.key === ' ' || e.code === 'Space';
+
+    // Стрелки и пробел ВСЕГДА блокируем от SillyTavern пока открыта игра
+    if (isArrow || isSpace) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+    }
+
+    /* --- 2048: стрелки = ходы --- */
+    if (panel2048Open) {
+        const dir = { ArrowLeft:'left', ArrowRight:'right', ArrowUp:'up', ArrowDown:'down' }[e.key];
+        if (dir) g2048Move(dir);
+        return;
+    }
+
+    /* --- Flappy Bird: пробел / стрелка вверх = прыжок --- */
+    if (flappyPanelOpen) {
+        if (isSpace || e.key === 'ArrowUp') fbFlap();
+        return;
+    }
+
+    /* --- Судоку: стрелки = навигация по ячейкам, цифры = ввод --- */
+    if (sudokuPanelOpen && !suGameOver) {
+        const key = e.key;
+        if (key >= '1' && key <= '9') { e.stopPropagation(); suInput(+key); return; }
+        if (key === 'Backspace' || key === 'Delete' || key === '0') { e.stopPropagation(); suInput(0); return; }
+        if (!suSelected) return;
+        let { r, c } = suSelected;
+        if      (key === 'ArrowUp'    && r > 0) r--;
+        else if (key === 'ArrowDown'  && r < 8) r++;
+        else if (key === 'ArrowLeft'  && c > 0) c--;
+        else if (key === 'ArrowRight' && c < 8) c++;
+        else return;
+        if (!suGiven[r][c]) { suSelected = { r, c }; suRenderGrid(); }
+        return;
+    }
+
+    /* --- Сапёр: стрелки = навигация по полю --- */
+    if (msPanelOpen && msStarted && !msDead && !msWon) {
+        if (!isArrow) return;
+        const cfg = MS_CFG[msDiff];
+        // Ищем текущую выбранную ячейку или берём первую открытую
+        let cur = document.querySelector('.ms-cell.kb-focus');
+        let r = cur ? +cur.dataset.r : 0;
+        let c = cur ? +cur.dataset.c : 0;
+        if (e.key === 'ArrowUp'    && r > 0) r--;
+        else if (e.key === 'ArrowDown'  && r < cfg.rows-1) r++;
+        else if (e.key === 'ArrowLeft'  && c > 0) c--;
+        else if (e.key === 'ArrowRight' && c < cfg.cols-1) c++;
+        document.querySelectorAll('.ms-cell.kb-focus').forEach(el => el.classList.remove('kb-focus'));
+        const next = document.querySelector('.ms-cell[data-r="'+r+'"][data-c="'+c+'"]' );
+        if (next) next.classList.add('kb-focus');
+        return;
+    }
+}, true); // capture:true — перехватываем ДО SillyTavern
+
+// Init
+if (enabledGames.has(currentGame)) lazyInitGame(currentGame);
+console.log('🎮 [Games] v6.1 — Добавлен Маджонг!');
