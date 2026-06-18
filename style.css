@@ -51,27 +51,59 @@
    КНОПКА ИГРЫ
 ═══════════════════════════════════════ */
 .bb-btn {
+    --bb-size: 30px;
+    --bb-icon: 18px;
     position: fixed;
-    width: 48px; height: 48px;
+    width: var(--bb-size); height: var(--bb-size);
     border-radius: 0;
     background: #e94560;
     background-image: url('./icons/gamepad.svg');
-    background-size: 28px;
+    background-size: var(--bb-icon);
     background-repeat: no-repeat;
     background-position: center;
     color: transparent;
     font-size: 0;
     display: flex; align-items: center; justify-content: center;
     cursor: grab; z-index: 10000;
-    box-shadow: 
+    box-shadow:
         4px 4px 0 #000,
         inset -2px -2px 0 #c73652,
         inset 2px 2px 0 #ff6b8a;
     border: 3px solid #1a1a2e;
-    transition: transform 0.1s, box-shadow 0.1s;
+    transition: transform 0.1s, box-shadow 0.1s, opacity 0.2s, filter 0.2s;
     user-select: none; -webkit-user-select: none;
     touch-action: none; -webkit-tap-highlight-color: transparent;
     image-rendering: pixelated;
+}
+
+/* Размер значка (S по умолчанию) */
+.bb-btn.bb-size-s { --bb-size: 30px; --bb-icon: 18px; }
+.bb-btn.bb-size-m { --bb-size: 40px; --bb-icon: 24px; }
+.bb-btn.bb-size-l { --bb-size: 50px; --bb-icon: 30px; }
+
+/* Тусклый (незаметный) режим — значок не яркий и не мешается */
+.bb-btn.bb-dim {
+    opacity: 0.28;
+    filter: grayscale(0.65);
+}
+.bb-btn.bb-dim:hover {
+    opacity: 1;
+    filter: none;
+}
+/* во время генерации показываем активность даже в тусклом режиме */
+.bb-btn.bb-dim.bb-gen {
+    opacity: 0.8;
+    filter: none;
+}
+
+/* Без анимации — статичный значок: ни пульсации генерации, ни прыжков/переходов */
+.bb-btn.bb-noanim {
+    transition: none !important;
+    animation: none !important;
+}
+.bb-btn.bb-noanim:hover,
+.bb-btn.bb-noanim:active {
+    transform: none;
 }
 .bb-btn:hover {
     transform: translate(-2px, -2px);
@@ -903,6 +935,39 @@
     border-color: #e94560;
     box-shadow: 1px 1px 0 #000, inset 0 -2px 0 rgba(0,0,0,0.3);
     text-shadow: none;
+}
+
+/* ── Раздел «Вид значка» в настройках ── */
+.bb-appearance-section {
+    margin-top: 12px;
+    border-top: 2px solid #1a3060;
+    padding-top: 10px;
+}
+.bb-appearance-title { margin-bottom: 8px; }
+.bb-appearance-row { margin-bottom: 4px; }
+.bb-appearance-row .bb-settings-name { flex: 1; }
+
+.bb-size-ctrl { display: flex; gap: 4px; flex-shrink: 0; }
+.bb-size-btn {
+    background: rgba(60,60,80,0.4);
+    color: #777;
+    border: 2px solid #3a3a5a;
+    border-radius: 0;
+    padding: 3px 7px;
+    font-family: var(--pixel-font);
+    font-size: 7px;
+    cursor: pointer;
+    box-shadow: 1px 1px 0 #000;
+    transition: all 0.1s;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+.bb-size-btn:hover { border-color: #888; color: #aaa; }
+.bb-size-btn.active {
+    background: rgba(245,166,35,0.2);
+    color: #f5a623;
+    border-color: #f5a623;
+    text-shadow: 0 0 4px rgba(245,166,35,0.5);
 }
 
 /* ═══════════════════════════════════════

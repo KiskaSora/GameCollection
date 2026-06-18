@@ -12,9 +12,22 @@ btn.className = 'bb-btn fa-solid fa-gamepad';
 btn.title = 'Игры (двойной клик — сменить игру)';
 document.body.appendChild(btn);
 
+/* ── Вид значка: размер (s/m/l), тусклый режим, без анимации ── */
+let btnSize   = localStorage.getItem('bb_btnsize') || 's';
+let btnDim    = localStorage.getItem('bb_dim') === '1';
+let btnNoAnim = localStorage.getItem('bb_noanim') === '1';
+function applyBtnAppearance() {
+    btn.classList.remove('bb-size-s', 'bb-size-m', 'bb-size-l');
+    btn.classList.add('bb-size-' + btnSize);
+    btn.classList.toggle('bb-dim', btnDim);
+    btn.classList.toggle('bb-noanim', btnNoAnim);
+}
+applyBtnAppearance();
+
 function safePos() {
-    btn.style.left   = Math.max(0, window.innerWidth  - 54)  + 'px';
-    btn.style.top    = Math.max(0, window.innerHeight - 104) + 'px';
+    const sz = btn.offsetWidth || 36;
+    btn.style.left   = Math.max(0, window.innerWidth  - sz - 6)  + 'px';
+    btn.style.top    = Math.max(0, window.innerHeight - sz - 56) + 'px';
     btn.style.bottom = ''; btn.style.right = '';
 }
 (() => {
@@ -137,7 +150,8 @@ function openCurrentGame() {
     flappyPanel.classList.remove('open'); flappyPanelOpen=false; fbStopLoop();
     sudokuPanel.classList.remove('open'); sudokuPanelOpen=false;
     cleanupDrag();
-    
+    stopGameTimers();
+
     if (currentGame==='blockblast') {
         lazyInitGame('blockblast');
         panel.classList.add('open'); panelOpen=true;
@@ -146,6 +160,7 @@ function openCurrentGame() {
         lazyInitGame('minesweeper');
         msPanel.classList.add('open'); msPanelOpen=true;
         positionEl(msPanel, 300);
+        if (msStarted && !msDead && !msWon) msStartTimer();
     } else if (currentGame==='game2048') {
         lazyInitGame('game2048');
         panel2048.classList.add('open'); panel2048Open=true;
@@ -154,10 +169,12 @@ function openCurrentGame() {
         lazyInitGame('memory');
         memPanel.classList.add('open'); memPanelOpen=true;
         positionEl(memPanel, 400);
+        if (memGameActive) memStartTimer();
     } else if (currentGame==='mahjong') {
         lazyInitGame('mahjong');
         mjPanel.classList.add('open'); mjPanelOpen=true;
         positionEl(mjPanel, 310);
+        if (mjTiles.length && !mjGameOver) mjStartTimer();
     } else if (currentGame==='flappybird') {
         flappyPanel.classList.add('open'); flappyPanelOpen=true;
         positionEl(flappyPanel, 310);
@@ -166,6 +183,7 @@ function openCurrentGame() {
         lazyInitGame('sudoku');
         sudokuPanel.classList.add('open'); sudokuPanelOpen=true;
         positionEl(sudokuPanel, 310);
+        if (suSolution && !suGameOver) suStartTimer();
     }
 }
 
@@ -178,8 +196,15 @@ function closePanels() {
     flappyPanel.classList.remove('open'); flappyPanelOpen=false; fbStopLoop();
     sudokuPanel.classList.remove('open'); sudokuPanelOpen=false;
     cleanupDrag();
+    stopGameTimers();
+}
+
+/* Останавливает фоновые таймеры всех игр (вызывается при закрытии/смене игры) */
+function stopGameTimers() {
     clearInterval(memTimer);
     clearInterval(mjTimerInt);
+    clearInterval(msTimerInt);
+    clearInterval(suTimerInt);
 }
 
 function showPicker() {
@@ -455,9 +480,62 @@ settingsEl = document.createElement('div');
 settingsEl.className = 'bb-picker bb-settings-panel';
 settingsEl.innerHTML = `
 <div class="bb-picker-title"><span class="gc-icon gc-icon-settings" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></span> ИГРЫ</div>
-<div class="bb-settings-list" id="bb-settings-list"></div>`;
+<div class="bb-settings-list" id="bb-settings-list"></div>
+<div class="bb-appearance-section">
+  <div class="bb-picker-title bb-appearance-title">ВИД ЗНАЧКА</div>
+  <div class="bb-settings-row bb-appearance-row">
+    <span class="bb-settings-name">Размер</span>
+    <div class="bb-size-ctrl">
+      <button class="bb-size-btn" data-s="s">S</button>
+      <button class="bb-size-btn" data-s="m">M</button>
+      <button class="bb-size-btn" data-s="l">L</button>
+    </div>
+  </div>
+  <div class="bb-settings-row bb-appearance-row">
+    <span class="bb-settings-name">Тусклый режим</span>
+    <button class="bb-toggle" id="bb-dim-toggle">ВЫКЛ</button>
+  </div>
+  <div class="bb-settings-row bb-appearance-row">
+    <span class="bb-settings-name">Без анимации</span>
+    <button class="bb-toggle" id="bb-noanim-toggle">ВЫКЛ</button>
+  </div>
+</div>`;
 document.body.appendChild(settingsEl);
 settingsEl.addEventListener('click', e => e.stopPropagation());
+
+function rebuildAppearanceControls() {
+    settingsEl.querySelectorAll('.bb-size-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.s === btnSize));
+    const dt = $('bb-dim-toggle');
+    dt.classList.toggle('on', btnDim);
+    dt.textContent = btnDim ? 'ВКЛ' : 'ВЫКЛ';
+    const at = $('bb-noanim-toggle');
+    at.classList.toggle('on', btnNoAnim);
+    at.textContent = btnNoAnim ? 'ВКЛ' : 'ВЫКЛ';
+}
+settingsEl.querySelectorAll('.bb-size-btn').forEach(b => {
+    b.addEventListener('click', e => {
+        e.stopPropagation();
+        btnSize = b.dataset.s;
+        localStorage.setItem('bb_btnsize', btnSize);
+        applyBtnAppearance();
+        rebuildAppearanceControls();
+    });
+});
+$('bb-dim-toggle').addEventListener('click', e => {
+    e.stopPropagation();
+    btnDim = !btnDim;
+    localStorage.setItem('bb_dim', btnDim ? '1' : '0');
+    applyBtnAppearance();
+    rebuildAppearanceControls();
+});
+$('bb-noanim-toggle').addEventListener('click', e => {
+    e.stopPropagation();
+    btnNoAnim = !btnNoAnim;
+    localStorage.setItem('bb_noanim', btnNoAnim ? '1' : '0');
+    applyBtnAppearance();
+    rebuildAppearanceControls();
+});
 
 function rebuildPickerCards() {
     const row = $('bb-picker-row');
@@ -521,6 +599,7 @@ $('bb-settings-btn').addEventListener('click', e => {
     else {
         settingsOpen = true;
         rebuildSettingsToggles();
+        rebuildAppearanceControls();
         settingsEl.classList.add('open');
         positionEl(settingsEl, 270);
     }
@@ -818,6 +897,15 @@ function mjRender() {
     mjCheckState();
 }
 
+function mjStartTimer(){
+    clearInterval(mjTimerInt);
+    mjTimerInt = setInterval(() => {
+        if (mjGameOver) return;
+        mjSecs++;
+        let m = Math.floor(mjSecs/60), s = mjSecs%60;
+        $('mj-timer-disp').innerHTML = `<span class="gc-icon gc-icon-timer"></span> ${m}:${s.toString().padStart(2,'0')}`;
+    }, 1000);
+}
 function mjNewGame() {
     clearInterval(mjTimerInt);
     mjSecs = 0; mjPairsFound = 0; mjSelected = null; mjGameOver = false;
@@ -835,12 +923,7 @@ function mjNewGame() {
     mjPanel.querySelectorAll('.mj-diff').forEach(b => b.classList.toggle('active', b.dataset.d === mjDiff));
     
     $('mj-timer-disp').innerHTML = '<span class="gc-icon gc-icon-timer"></span> 0:00';
-    mjTimerInt = setInterval(() => {
-        if (mjGameOver) return;
-        mjSecs++;
-        let m = Math.floor(mjSecs/60), s = mjSecs%60;
-        $('mj-timer-disp').innerHTML = `<span class="gc-icon gc-icon-timer"></span> ${m}:${s.toString().padStart(2,'0')}`;
-    }, 1000);
+    mjStartTimer();
 }
 
 function mjWin() {
@@ -1123,13 +1206,17 @@ function msPlaceMines(rows,cols,mines,safeR,safeC) {
     }
     return grid;
 }
+function msStartTimer(){
+    clearInterval(msTimerInt);
+    msTimerInt=setInterval(()=>{ msSecs++; $('ms-timer-disp').innerHTML=`<span class="gc-icon gc-icon-timer"></span> ${msSecs}`; },1000);
+}
 function msReveal(r,c) {
     if (msDead||msWon) return; const cfg=MS_CFG[msDiff], cell=msCells[r]?.[c];
     if (!cell||cell.revealed||cell.flagged) return;
     if (!msStarted) {
         msStarted=true; const grid=msPlaceMines(cfg.rows,cfg.cols,cfg.mines,r,c);
         msCells.forEach((row,ri)=>row.forEach((cel,ci)=>{ cel.value=grid[ri][ci]; }));
-        msTimerInt=setInterval(()=>{ msSecs++; $('ms-timer-disp').innerHTML=`<span class="gc-icon gc-icon-timer"></span> ${msSecs}`; },1000);
+        msStartTimer();
     }
     if (cell.value===-1) {
         cell.revealed=true; cell.el.classList.add('revealed','mine-hit'); cell.el.textContent='💥';
@@ -1348,15 +1435,23 @@ let fbState=0, fbScore=0, fbBest=parseInt(localStorage.getItem('fb_best')||'0'),
 $('fb-best').textContent=fbBest;
 function fbRandGap(){ return FB_GROUND_H+40+Math.random()*(FB_H-FB_GROUND_H-FB_GAP-80); }
 function fbStopLoop(){ if(fbRAF){ cancelAnimationFrame(fbRAF); fbRAF=null; } }
+function fbStartLoop(){ fbStopLoop(); fbLastT=0; fbRAF=requestAnimationFrame(fbLoop); }
 function fbInit(){
     fbState=0; fbScore=0; fbBirdY=FB_H/2; fbBirdVY=0; fbFrame=0; fbGroundX=0;
     fbPipes=[ {x:FB_W+60, gapY:fbRandGap(), scored:false}, {x:FB_W+220, gapY:fbRandGap(), scored:false} ];
-    $('fb-score').textContent=0; $('fb-help').textContent='Click / Space to start'; fbStopLoop(); fbRAF=requestAnimationFrame(fbLoop);
+    $('fb-score').textContent=0; $('fb-help').textContent='Click / Space to start'; fbStopLoop(); fbDraw();
 }
 function fbFlap(){
-    if(fbState===0){ fbState=1; $('fb-help').textContent=''; } else if(fbState===1){ fbBirdVY=FB_FLAP; } else if(fbState===2){ fbInit(); }
+    if(fbState===0){ fbState=1; $('fb-help').textContent=''; fbStartLoop(); } else if(fbState===1){ fbBirdVY=FB_FLAP; } else if(fbState===2){ fbInit(); }
 }
-function fbLoop(ts){ fbRAF=requestAnimationFrame(fbLoop); if(ts-fbLastT<25){ return; } fbLastT=ts; fbUpdate(); fbDraw(); }
+/* Цикл анимации работает только во время игры (state===1) — на старте и после
+   проигрыша экран статичен, поэтому RAF не крутится вхолостую и не грузит вкладку */
+function fbLoop(ts){
+    if(fbState!==1){ fbRAF=null; return; }
+    fbRAF=requestAnimationFrame(fbLoop);
+    if(ts-fbLastT<25){ return; }
+    fbLastT=ts; fbUpdate(); if(fbState===1) fbDraw();
+}
 function fbUpdate(){
     if(fbState!==1) return;
     fbBirdVY+=FB_GRAVITY; fbBirdY+=fbBirdVY; fbGroundX=(fbGroundX-FB_SPEED); if(fbGroundX<-20) fbGroundX=0;
@@ -1372,7 +1467,7 @@ function fbUpdate(){
         if(FB_BIRD_X+FB_BIRD_R>p.x+4 && FB_BIRD_X-FB_BIRD_R<p.x+FB_PIPE_W-4){ if(fbBirdY-FB_BIRD_R<p.gapY || fbBirdY+FB_BIRD_R>p.gapY+FB_GAP){ fbDie(); return; } }
     }
 }
-function fbDie(){ fbState=2; $('fb-help').textContent='Game Over! Click to restart'; }
+function fbDie(){ fbState=2; fbStopLoop(); $('fb-help').textContent='Game Over! Click to restart'; fbDraw(); }
 function fbDraw(){
     const cv=$('fb-canvas'); if(!cv) return; const cx=cv.getContext('2d');
     const sky=cx.createLinearGradient(0,0,0,FB_H-FB_GROUND_H); sky.addColorStop(0,'#4ec0ff'); sky.addColorStop(1,'#b3e5fc');
@@ -1463,16 +1558,20 @@ function suBuildNumpad() {
     eb.addEventListener('click', e=>{ e.stopPropagation(); suInput(0); }); eb.addEventListener('touchend', e=>{ e.preventDefault(); e.stopPropagation(); suInput(0); });
     pad.appendChild(eb);
 }
+function suStartTimer(){
+    clearInterval(suTimerInt);
+    suTimerInt = setInterval(() => {
+        if (suGameOver) return; suTimer++;
+        if ($('su-timer')) $('su-timer').textContent = `${Math.floor(suTimer/60)}:${(suTimer%60).toString().padStart(2,'0')}`;
+    }, 1000);
+}
 function suNewGame() {
     clearInterval(suTimerInt); suErrors = 0; suTimer = 0; suSelected = null; suGameOver = false;
     if ($('su-errors')) $('su-errors').textContent = '0'; if ($('su-timer')) $('su-timer').textContent = '0:00'; $('su-over')?.classList.remove('show');
     const { sol, puzzle } = suGenPuzzle(SU_CLUES[suDiff]); suSolution = sol; suPuzzle = puzzle; suState = puzzle.map(r => [...r]); suGiven = puzzle.map(r => r.map(v => v !== 0));
     suRenderGrid(); suBuildNumpad();
     sudokuPanel.querySelectorAll('.su-diff').forEach(b => b.classList.toggle('active', b.dataset.d === suDiff));
-    suTimerInt = setInterval(() => {
-        if (suGameOver) return; suTimer++;
-        if ($('su-timer')) $('su-timer').textContent = `${Math.floor(suTimer/60)}:${(suTimer%60).toString().padStart(2,'0')}`;
-    }, 1000);
+    suStartTimer();
 }
 function suInput(n) {
     if (!suSelected || suGameOver) return; const { r, c } = suSelected; if (suGiven[r][c]) return;
